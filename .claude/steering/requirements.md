@@ -132,6 +132,7 @@ written, so that the conversation feels like an ordinary chat.
 6. WHEN the Front_End disconnects during generation, THE Backend_API SHALL finish and persist the reply anyway. Reopening the Branch shows it, or shows it still in progress.
 7. IF Message content is empty after trimming or longer than 100,000 characters, THEN THE Backend_API SHALL reject it without persisting anything and return a validation error identifying the `content` field.
 8. WHEN the user sends a Message in a `parked` Branch, THE Backend_API SHALL change its Status to `open` (Req 10.3).
+9. IF the Tip of a Branch is a user Message (its reply is pending, failed or was refused), THEN THE Backend_API SHALL reject a further user Message in that Branch with a `conflict` error, so that a Framing_Block is always followed by an assistant turn. The user may request the reply again (Req 2.3) or edit that Message (Req 3.2).
 
 ### Requirement 3: Immutable messages and Alternatives
 
@@ -144,7 +145,7 @@ original, so that I can compare and nothing I wrote disappears.
 2. WHEN the user edits a user Message, THE Backend_API SHALL create an Alternative whose parent is the Branch that owns the edited Message. The Alternative's Anchor is the whole edited Message, its Fork_Point is the edited Message's predecessor, and its first Message is the edited text.
 3. WHEN the user regenerates an assistant Message, THE Backend_API SHALL create an Alternative in the same way. Its first Message is a new reply generated from the same predecessor.
 4. THE Front_End SHALL show, on a Message that has Alternatives, how many exist and a control to move between them. The original stays where it was.
-5. THE Backend_API SHALL give an Alternative the same Inherited_Prefix rules as a Tangent, with no Framing_Block.
+5. THE Backend_API SHALL give an Alternative the same Inherited_Prefix rules as a Tangent, with no Framing_Block of its own. WHERE the Alternative replaces the first Message of a Tangent, it stands where that Message stood, so its Context carries that Tangent's Framing_Block immediately after the Alternative's first Message (Req 7.1).
 
 ### Requirement 4: Spawning a Tangent from a passage
 
@@ -279,7 +280,7 @@ so that what the tangent found is available where it matters.
 2. THE Note SHALL contain the Conclusion and identify the source Branch by its Intent (or Anchor quote) and its Anchor quote. format in design.md.
 3. THE merge target SHALL default to the parent Branch and MAY be any ancestor of the closing Branch whose Status is not `closed`.
 4. IF the merge target is not such an ancestor, THEN THE Backend_API SHALL reject the close without persisting anything and return a validation error identifying the `merge_target` field.
-5. IF the merge target has a reply in progress, THEN THE Backend_API SHALL reject the close with a `busy` error.
+5. IF the merge target has a reply in progress, THEN THE Backend_API SHALL reject the close with a `busy` error. IF the target's Tip is a user Message awaiting its reply, THEN it SHALL reject the close with a `conflict` error (Req 2.9).
 6. THE Backend_API SHALL never change existing Messages to merge. A Note affects only Contexts built after it: later replies in the target Branch, and Branches whose Fork_Point is the Note or a later Message.
 7. THE Front_End SHALL show a Note in the target's Path_View as a distinct block with a link to the source Branch.
 

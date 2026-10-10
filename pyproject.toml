@@ -39,7 +39,7 @@ strict = ["treechat"]
 pythonVersion = "3.14"
 
 [tool.ruff]
-line-length = 110
+line-length = 120
 target-version = "py314"
 
 [tool.ruff.lint]
