@@ -217,6 +217,39 @@ def closings_for(conn: sqlite3.Connection, branch_id: BranchId) -> list[ClosingR
     ]
 
 
+def closings_in_tree(conn: sqlite3.Connection, tree_id: TreeId) -> dict[BranchId, list[ClosingRow]]:
+    """Every closing record of a Tree, oldest first per Branch (Req 12.4, 12.7)."""
+    out: dict[BranchId, list[ClosingRow]] = {}
+    rows = conn.execute(
+        "SELECT c.* FROM closings c JOIN branches b ON b.id = c.branch_id WHERE b.tree_id = ? "
+        "ORDER BY c.closed_at, c.id",
+        (tree_id,),
+    )
+    for r in rows:
+        out.setdefault(r["branch_id"], []).append(
+            ClosingRow(
+                r["id"],
+                r["branch_id"],
+                Outcome(r["outcome"]),
+                r["conclusion"],
+                r["merge_target_branch_id"],
+                r["note_message_id"],
+                r["closed_at"],
+            )
+        )
+    return out
+
+
+def latest_generated_in_tree(conn: sqlite3.Connection, tree_id: TreeId, kind: str) -> dict[BranchId, str]:
+    """The newest generated text of `kind` for every Branch of a Tree that has one (Req 11.4)."""
+    rows = conn.execute(
+        "SELECT g.branch_id, g.text FROM generated_texts g JOIN branches b ON b.id = g.branch_id "
+        "WHERE b.tree_id = ? AND g.kind = ? ORDER BY g.created_at, g.id",
+        (tree_id, kind),
+    )
+    return {r["branch_id"]: r["text"] for r in rows}
+
+
 def insert_generated(
     conn: sqlite3.Connection, gid: str, branch_id: BranchId, kind: str, text: str, model: str, now: str
 ) -> None:
