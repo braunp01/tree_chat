@@ -11,7 +11,7 @@ import os
 import tempfile
 from typing import Any
 
-from hypothesis import HealthCheck, event, settings
+from hypothesis import HealthCheck, settings
 from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, precondition, rule
 
@@ -278,6 +278,12 @@ class TreeMachine(RuleBasedStateMachine):
         targets = rules.merge_targets(before, bid)
         target = data.draw(st.sampled_from([None, *targets])) if outcome is Outcome.MERGED else None
         effective = target or b.parent_branch_id
+        if outcome is Outcome.MERGED and effective in targets and before.chain(effective):
+            # What a user does before merging into a branch that is waiting for its reply: get the reply first.
+            if before.messages[before.chain(effective)[-1]].role is Role.USER and data.draw(st.integers(0, 3)):
+                events = asyncio.run(reply(self.ctx, self.fake, effective))
+                assert events[-1]["type"] == "done", events[-1]
+                before = self.snap()
         expect_error: type[Exception] | None = None
         if outcome is Outcome.MERGED and b.kind is BranchKind.ALTERNATIVE:
             expect_error = ValidationError
@@ -297,7 +303,6 @@ class TreeMachine(RuleBasedStateMachine):
                 return
             raise AssertionError(f"expected {expect_error.__name__}")
         result = closing.close_branch(self.ctx, bid, outcome, conclusion, target, abandon)
-        event(f"closed {outcome.value}" + (" past the parent" if target and target != b.parent_branch_id else ""))
         after = self.snap()
         assert after.branches[bid].status is Status.CLOSED
         if outcome is Outcome.MERGED:  # Property 9: exactly one Note, at the target's Tip, nothing else touched
@@ -445,6 +450,6 @@ TreeMachine.TestCase.settings = settings(
     max_examples=int(os.environ.get("TREECHAT_STATEFUL_EXAMPLES", "25")),
     stateful_step_count=25,
     deadline=None,
-    suppress_health_check=list(HealthCheck),
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large, HealthCheck.filter_too_much],
 )
 TestTreeMachine = TreeMachine.TestCase

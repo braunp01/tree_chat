@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 from treechat.domain import context
 from treechat.domain.errors import Busy, Conflict, NotFound, ValidationError
@@ -84,7 +86,8 @@ async def test_a_reply_is_persisted_with_its_manifest_and_blocks(ctx: Ctx, fake:
     assert fake.requests[-1] == prepared.request  # exactly what the manifest describes
     with ctx.store.read() as c:
         manifest = repo.get_manifest(c, mid)
-    assert manifest == prepared.manifest and [e.id for e in manifest.entries if isinstance(e, MessageEntry)] == [u.id]
+    assert manifest is not None and manifest == prepared.manifest
+    assert [e.id for e in manifest.entries if isinstance(e, MessageEntry)] == [u.id]
     snap = snapshot(ctx, tid)
     m = snap.messages[mid]
     assert m.role is Role.ASSISTANT and m.model == "fake-model" and m.blocks_json and "fake-sig-" in m.blocks_json
@@ -495,3 +498,48 @@ async def test_standing_summary_needs_a_reply_and_the_draft_is_not_stored(ctx: C
     draft = await draft_conclusion(ctx, fake, t.id)
     assert draft and counts(ctx) == before  # Req 12.1: drafts are not stored
     assert "tangent question" in fake.completions[-1][1]
+
+
+# --- Property 9: a merge lands exactly at the chosen target (Req 13.1, 13.3, 13.6) --------------------
+
+
+@settings(
+    max_examples=30,
+    deadline=None,
+    suppress_health_check=[HealthCheck.too_slow, HealthCheck.data_too_large, HealthCheck.filter_too_much],
+)
+@given(st.integers(0, 3), st.integers(0, 2), st.booleans())
+def test_property_9_a_merge_appends_one_note_at_the_chosen_ancestor_only(
+    pick: int, closed_ancestor: int, abandon: bool
+) -> None:
+    import asyncio
+    import tempfile
+
+    async def build(ctx: Ctx, fake: FakeProvider) -> tuple[str, list[str]]:
+        tid, trunk = new_tree(ctx)
+        chain = [trunk]
+        _, a = await chat(ctx, fake, trunk, "tell me about caching")
+        for depth in range(3):  # trunk -> t1 -> t2 -> t3
+            msg = snapshot(ctx, tid).messages[a]
+            t = branches.spawn_tangent(ctx, a, 0, 5, msg.content[:5], f"level {depth + 1}", "anchor", Status.OPEN)
+            _, a = await chat(ctx, fake, t.id, f"question at depth {depth + 1}")
+            chain.append(t.id)
+        return tid, chain
+
+    with tempfile.TemporaryDirectory() as d:
+        ctx, fake = make_ctx(Path(d)), FakeProvider()
+        tid, chain = asyncio.run(build(ctx, fake))
+        deepest = chain[-1]
+        if closed_ancestor == 1:  # close the middle branch first, so it stops being a target
+            closing.close_branch(ctx, chain[2], Outcome.KEPT, "closed earlier")
+        before = snapshot(ctx, tid)
+        targets = [t for t in (chain[2], chain[1], chain[0]) if before.branches[t].status is not Status.CLOSED]
+        target = targets[pick % len(targets)]
+        result = closing.close_branch(ctx, deepest, Outcome.MERGED, "found it", target, abandon)
+        after = snapshot(ctx, tid)
+        assert result.note is not None and after.chain(target)[-1] == result.note.id
+        assert after.chain(target)[:-1] == before.chain(target)
+        assert len(after.messages) == len(before.messages) + 1
+        for other in before.branches:
+            if other != target:
+                assert after.chain(other) == before.chain(other)

@@ -502,6 +502,7 @@ Guarantees:
 
 - **Property-based tests** (primary evidence for the domain): Hypothesis, one test per property.
   - Properties 1, 2, 6, 7, 8, 9 and 12 run as a `RuleBasedStateMachine` with rules for every operation: create, send, reply (Fake), spawn, park, resume, close, merge, reopen, change Fork_Point, edit, regenerate. It runs at least 200 examples of up to 60 steps.
+  - Property 9 (a merge lands exactly at the chosen ancestor) also has its own test over three-deep trees, because random sequences rarely build that shape; breaking the rule on purpose makes it fail.
   - The other properties run with at least 500 examples each.
   - Generators include empty Branches, Anchors on Notes, Fork_Points at a Note, Alternatives of a Branch's first Message, deep chains, and text with emoji and combining marks.
   - Each property also has one deterministic companion example for the case it most exists for. For example, Property 7: reply in a parent → spawn a child at that reply → reply in the child; the child's request must contain the parent's reply, thinking blocks included, byte for byte.
