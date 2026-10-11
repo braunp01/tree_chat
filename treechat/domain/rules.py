@@ -174,3 +174,20 @@ def parent_messages_since_fork(snap: TreeSnapshot, branch_id: BranchId) -> int:
     if b.fork_point_message_id in chain:
         return len(chain) - chain.index(b.fork_point_message_id) - 1
     return len(chain)
+
+
+def message_positions(snap: TreeSnapshot) -> dict[MessageId, int]:
+    """Conversation_Position of every Message in one pass (Req 14.9). Equals `conversation_position` per Message,
+    but O(messages) overall instead of O(depth) per call, which the Tree_Map needs at 10,000 Messages."""
+    pos: dict[MessageId, int] = {}
+    for mid in snap.messages:
+        pending: list[MessageId] = []
+        cur: MessageId | None = mid
+        while cur is not None and cur not in pos:
+            pending.append(cur)
+            cur = snap.messages[cur].parent_message_id
+        n = pos[cur] if cur is not None else -1
+        for p in reversed(pending):
+            n += 1
+            pos[p] = n
+    return pos

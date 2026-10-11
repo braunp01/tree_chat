@@ -70,6 +70,7 @@ Around the core:
 | Rabbit-hole cues | **Depth and open/parked counts always visible; one-key Close; optional reply-count nudge (default 8)** | Owner accepted, 11 Oct 2026. These are cheap, constant and non-blocking. Hard limits (depth caps, maximum open Branches) were rejected: the owner wants no depth cap, and hard limits push people towards workarounds. (Req 15) |
 | Backend language | **Python 3.14.** F# was the close second; Haskell was rejected. | Owner accepted, 11 Oct 2026. An honest comparison: **F#** gives discriminated unions and exhaustive matching, which suit the Status machine and manifest entries well, and FsCheck works. Against it: no .NET toolchain is installed here, and SSE streaming and markdown support are thinner. **Haskell** gives the strongest types, but has no official Anthropic SDK and the slowest iteration; the domain is not hard enough to repay that. **Python** has the provider's first-party SDK, where features land first (thinking blocks, fallbacks, caching). It also has **Hypothesis stateful testing**, which matches this product's riskiest part (sequences of spawn/park/close/merge/switch) better than anything in the other two. Frozen dataclasses, `match`/`assert_never` and pyright strict cover most of what F# would add. **TypeScript end to end** was also weighed (shared types with the Front_End). It lost on property-testing depth. |
 | Web layer | **FastAPI on uvicorn; replies streamed as `text/event-stream`** | Pydantic gives the field-named validation errors the requirements ask for. SSE is one-directional and enough for streaming; WebSockets add nothing here. |
+| App state |  **Built in `create_app()` (store, job registry, provider) and kept on `app.state.tc`; the lifespan only drains running jobs on shutdown.** | Lets tests build an app on a temporary file and script the Fake provider, with no start-up ordering to get wrong. |
 | Generation jobs | **One in-process asyncio task per reply, independent of the HTTP request. Streams fan out to subscribers. At most one job per Branch.** | Req 2.5–2.6: closing the tab must not lose a paid reply. A single process means an in-memory registry is enough. **Known limit:** a reply in progress when the server stops is lost, and the user Message remains as the Tip so it can be retried. |
 | Store | **SQLite (stdlib `sqlite3`), WAL mode, one file. Triggers forbid UPDATE/DELETE on `messages`. Schema migrations keyed on `PRAGMA user_version`.** | Single user, local, relational shape, transactional merges (Req 13.1, 16.5). Enforcing immutability in the database means a bug cannot quietly rewrite history (Req 3.1). |
 | Identifiers | **UUIDv7 strings (`uuid.uuid7()`, Python 3.14)** | Time-ordered (gives stable ordering) and safe to generate anywhere. |
@@ -226,6 +227,23 @@ Context_Manifest (`GET /api/messages/{id}/manifest`):
 ```
 
 - `cache_breakpoint_after`: the index of the entry that carries breakpoint 1, or null.
+
+#### Read models (built in `services/views.py`)
+
+- `GET /api/trees`: array of `{id, title, trunk_branch_id, created_at, last_activity_at, open_count, parked_count}` (Req 1.2). The counts exclude the Trunk.
+- `POST /api/trees` (201), `PATCH /api/trees/{id}` and `GET /api/trees/{id}`: `{id, title, trunk_branch_id, created_at, last_activity_at, branches: [Branch summary…]}` (Req 1.1, 14.1).
+- Branch summary: the spawn response above, plus `parent_label` (the parent's Intent, else its labelled Generated_Intent, else its quote; "Trunk"), `standing` (the "where it stands" line, Req 11.2), `status_since`. `generated_intent` is null whenever the user wrote an `intent` (Req 11.4). Each `closings` item is `{outcome, conclusion, merge_target, note_message_id, closed_at}`.
+- `GET /api/trees/{id}/queue?order=…`: array of Branch summaries in queue order. Staleness is `parked_at` and `parent_messages_since_fork` (Req 10.2, 10.4, 10.5). An unknown `order` is a `validation` error on `order`.
+- `GET /api/trees/{id}/map`: `{tree_id, trunk_branch_id, branches: [{id, parent_branch_id, kind, status, depth, intent, generated_intent, created_at, anchor_message_id, anchor_position, start_position, message_count, messages: [{id, role, position}]}]}`. Positions are Conversation_Positions computed in one pass (`rules.message_positions`). No message text (Req 14.8–14.14).
+- `GET /api/branches/{id}/view`: `{branch, breadcrumb, inherited, framing, messages, tip_message_id, awaiting_reply, reply_in_progress, assistant_reply_count, merge_targets, open_descendants}`.
+  - `inherited` is `{message_count, entries, anchor_message_id, anchor_message}`. `entries` is the whole Inherited_Prefix in order, each `{kind: "message", message}` or `{kind: "framing", branch_id, text, label}`. The client collapses it to "N earlier messages" and always shows `anchor_message` (Req 14.4). For an Alternative the anchor message is the replaced one and is not part of the prefix.
+  - Every message is the Message JSON plus `markers` (Tangents anchored in it: `{branch_id, start, end, status, intent, generated_intent}`, Req 5), `alternatives` (`{branch_id, status}`, Req 3.4) and, for Notes, `source: {branch_id, label}` (Req 13.7).
+  - `framing` is null for the Trunk, otherwise `{anchor_quote, intent, generated_intent, fork_point_message_id, text, frozen}`; `text` is null when the Branch has none of its own to send (a plain Alternative).
+  - `merge_targets` are the non-closed ancestors, nearest first (Req 13.3); `open_descendants` feed the close panel (Req 12.6); `awaiting_reply` tells the close panel to offer the reply first (Req 2.9, 13.5).
+- Closing returns the Branch summary plus `note_message_id` and `abandoned_branch_ids`.
+- `POST /api/messages/{id}/alternatives` returns the new Alternative's summary (201). The client then requests its reply with `POST /api/branches/{id}/reply`; a regeneration has no Message until then. A Note is a `conflict`; an edit without `content` is a `validation` error on `content`.
+- `POST /api/branches/{id}/conclusion-draft` returns `{"text": "…"}`. With no credentials it returns an empty string so the close panel still works (Req 17.3); any other provider failure is the usual error.
+- Request-body errors (missing or mistyped fields) use the same error body and name the top-level field (`anchor`, `content`, `title`, `outcome`…).
 
 #### Error response body
 
