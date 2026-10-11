@@ -27,6 +27,7 @@ Runtime (Python):
 Test only (Python, the `dev` dependency group):
 
 - `pytest` (test runner)
+- `pytest-asyncio` (async tests for the streaming provider and jobs)
 - `hypothesis` (property-based and stateful tests)
 - `httpx` (FastAPI test client)
 - `pyright` (strict type checking)
@@ -46,7 +47,7 @@ uv run treechat
 ```
 
 - `uv run pytest` makes **no** model calls (Fake provider; real provider connections are blocked).
-- `uv run pytest -m live` is the optional live check: at most 6 short requests, a few cents. **Run it only when the owner says so.**
+- `uv run pytest -m live` is the optional live check: at most 5 short requests, a few cents. **Run it only when the owner says so.**
 - `uv run treechat` serves the API and the built front end on http://127.0.0.1:8765.
 - For front-end development, run `npm run dev` in `web/`. It runs the Vite dev server with `/api` proxied to the back end.
 

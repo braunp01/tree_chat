@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from treechat.domain.context import SYSTEM_PROMPT_VERSION
-from treechat.domain.model import FramingEntry, Manifest, Message, MessageId, Role
+from treechat.domain.model import FramingEntry, Manifest, Message, MessageEntry, MessageId, Role
 
 # Frozen. Changing this text changes every request prefix: bump SYSTEM_PROMPT_VERSION with it.
 SYSTEM_PROMPT_V1 = (
@@ -28,10 +28,14 @@ type Block = dict[str, Any]
 type Turn = dict[str, Any]
 
 
-def _blocks_for(entry_message: Message) -> tuple[str, list[Block]]:
+def _blocks_for(entry_message: Message, request_model: str) -> tuple[str, list[Block]]:
     if entry_message.role is Role.ASSISTANT:
         if entry_message.blocks_json:
             blocks: list[Block] = json.loads(entry_message.blocks_json)
+            if entry_message.model is not None and entry_message.model != request_model:
+                # Written by another model (a refusal fallback served it): its thinking is bound to that model and
+                # is not replayed here; the visible text still is.
+                blocks = [b for b in blocks if b.get("type") not in ("thinking", "redacted_thinking")]
             return "assistant", blocks
         return "assistant", [{"type": "text", "text": entry_message.content}]
     # User Messages and Notes are both user-role text; Notes are labelled by their own tags (Req 7.9).
@@ -56,14 +60,21 @@ def render(manifest: Manifest, messages: Mapping[MessageId, Message]) -> dict[st
     so every replayed block still sits on the prefix that produced it (design.md, Thinking blocks).
     """
     turns: list[Turn] = []
-    entry_blocks: list[list[Block] | None] = []  # per entry: its own blocks (shared with `turns`), None for framing
-    for entry in manifest.entries:
+    entry_blocks: list[list[Block] | None] = []  # per entry: its own blocks (shared with `turns`), None for system
+    entries = manifest.entries
+    for i, entry in enumerate(entries):
         if isinstance(entry, FramingEntry):
-            turns.append({"role": "system", "content": entry.text})
-            entry_blocks.append(None)
-            continue
-        role, blocks = _blocks_for(messages[entry.id])
-        blocks = copy.deepcopy(blocks)
+            nxt = entries[i + 1] if i + 1 < len(entries) else None
+            if nxt is None or (isinstance(nxt, MessageEntry) and nxt.role is Role.ASSISTANT):
+                turns.append({"role": "system", "content": entry.text})
+                entry_blocks.append(None)
+                continue
+            # A tangent forked from a user Message that has no reply yet: the provider only accepts a system
+            # message before an assistant turn or at the end, so this framing travels as labelled user text.
+            role, blocks = "user", [{"type": "text", "text": entry.text}]
+        else:
+            role, blocks = _blocks_for(messages[entry.id], manifest.model)
+            blocks = copy.deepcopy(blocks)
         entry_blocks.append(blocks)
         if turns and turns[-1]["role"] == role:
             turns[-1]["content"].extend(blocks)

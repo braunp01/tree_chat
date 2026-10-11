@@ -141,11 +141,14 @@ def test_property_4_siblings_share_a_byte_identical_prefix(b: Builder) -> None:
     for ids in groups.values():
         reqs = []
         for bid in ids:
+            if not snap.chain(bid):
+                continue  # a reply is only ever requested once the Branch has a Message
             man = context.assemble(snap, bid, SETTINGS)
             n = len(context.inherited_prefix(snap, bid))
-            prefix_man = replace(man, entries=man.entries[:n])
-            blocks_in_prefix = len(flatten(render.render(prefix_man, snap.messages))) if n else 0
-            reqs.append((flatten(render.render(man, snap.messages))[:blocks_in_prefix], man.cache_breakpoint_after))
+            # Blocks of the prefix = blocks of (prefix + the Branch's first own entry) minus that entry's one block.
+            with_first = replace(man, entries=man.entries[: n + 1])
+            k = len(flatten(render.render(with_first, snap.messages))) - 1 if n else 0
+            reqs.append((flatten(render.render(man, snap.messages))[:k], man.cache_breakpoint_after))
         assert all(r == reqs[0] for r in reqs)
 
 
@@ -451,7 +454,8 @@ def test_cache_breakpoint_marks_the_last_inherited_block() -> None:  # Req 7.5
     assert req["cache_control"] == {"type": "ephemeral"}
 
 
-def test_breakpoint_skips_a_trailing_framing_entry() -> None:  # a system message cannot carry cache_control
+def test_framing_followed_by_a_user_turn_travels_as_user_text() -> None:
+    """A tangent forked from a user Message with no reply yet: its framing cannot be a system message."""
     b = Builder()
     m = b.add(b.trunk, Role.USER, "alpha beta")
     t = b.spawn(m, 0, 5)
@@ -462,8 +466,26 @@ def test_breakpoint_skips_a_trailing_framing_entry() -> None:  # a system messag
     man = context.assemble(snap, child, SETTINGS)
     assert isinstance(man.entries[man.cache_breakpoint_after or 0], FramingEntry)
     req = render.render(man, snap.messages)
+    # One user turn (trunk text, hi, parent framing, deeper) then the child's own framing, last, as a system message.
+    assert [t_["role"] for t_ in req["messages"]] == ["user", "system"]
+    blocks = req["messages"][0]["content"]
+    assert [x["text"][:17] for x in blocks][2] == "<tree_chat_framin"
+    marked = [i for i, blk in enumerate(blocks) if "cache_control" in blk]
+    assert marked == [2]  # breakpoint 1 sits on the last inherited block, the framing text
+
+
+def test_breakpoint_skips_a_system_framing_entry() -> None:  # a system message cannot carry cache_control
+    b = Builder()
+    m = b.add(b.trunk, Role.USER, "alpha beta")
+    t = b.spawn(m, 0, 5)
+    first = b.add(t, Role.USER, "hi")
+    b.add(t, Role.ASSISTANT, "reply")
+    child = b.spawn(first, 0, 2)  # prefix: m, first, framing(t) followed by the child's own user turn
+    snap = b.snapshot()
+    man = context.assemble(snap, child, SETTINGS)
+    assert man.cache_breakpoint_after is not None
+    req = render.render(man, snap.messages)
     assert all("cache_control" not in str(t_["content"]) for t_ in req["messages"] if t_["role"] == "system")
-    assert sum("cache_control" in blk for tn in req["messages"] if tn["role"] != "system" for blk in tn["content"]) == 1
 
 
 def test_system_prompt_is_frozen_text_and_versioned() -> None:

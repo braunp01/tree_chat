@@ -19,6 +19,7 @@ dev = [
     "httpx",
     "pyright",
     "ruff",
+    "pytest-asyncio>=1.4.0",
 ]
 
 [build-system]
@@ -31,6 +32,7 @@ packages = ["treechat"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m 'not live'"
+asyncio_mode = "auto"
 markers = ["live: calls the real LLM provider and costs money; run only with the owner's go-ahead (Req 17.5)"]
 
 [tool.pyright]
