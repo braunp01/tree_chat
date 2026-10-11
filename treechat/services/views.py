@@ -254,6 +254,11 @@ def view_out(ctx: Ctx, branch_id: BranchId) -> dict[str, Any]:
         out = message_out(m)
         out["markers"] = markers.get(m.id, [])
         out["alternatives"] = alternatives.get(m.id, [])
+        # Req 4.10: Notes in the owning Branch after this Message, which a Tangent forked here will not see.
+        owner_chain = snap.chain(m.branch_id)
+        out["notes_after"] = sum(
+            1 for k in owner_chain[owner_chain.index(m.id) + 1 :] if snap.messages[k].role is Role.NOTE
+        )
         if m.role is Role.NOTE and m.source_branch_id:
             src = snap.branches[m.source_branch_id]
             out["source"] = {"branch_id": src.id, "label": _label(src, x.generated.get(src.id))}
