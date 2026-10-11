@@ -4,6 +4,8 @@ Project steering lives in `.claude/steering/` and is imported below. Edit those 
 
 @.claude/steering/tech.md
 
+**Work in progress:** see `HANDOVER.md` for the current state, the approved plan for steps 6 to 10 and the rules for continuing.
+
 ## Product
 
 Tree Chat is a local, single-user chat client in which every tangent becomes a Branch anchored to the exact passage that prompted it. A Branch can be parked in a queue, resumed, and closed with a short Conclusion that is merged back into an ancestor as a Note. The conversation is a strict tree of Branches.
