@@ -342,6 +342,18 @@ The provider receives it as:
 
 `content` stores exactly this provider text, so that Anchors in a Note and the rendered request agree.
 
+### Enforced by the database itself
+
+`treechat/store/migrations/001_initial.sql` makes the database refuse, whatever the application does:
+
+- any UPDATE or DELETE of Messages, Status events, closings and generated texts, and any DELETE of Trees or Branches (Req 3.1, 16.3, 16.4);
+- changing a Branch's parent, kind, Anchor or creation time, changing its Framing_Block once set, and moving its Fork_Point once it has a Message (Req 7.3, 9.3);
+- a Message into a closed Branch (Req 12.8), a Message that does not follow the Fork_Point or the Branch's previous Message, or a duplicate `seq` (Req 6.2);
+- a second Trunk in a Tree, a parent in another Tree, or an Anchor Message that is not in the parent Branch (Req 4.4, 6.1);
+- an assistant Message without its manifest, blocks and model (Req 7.7), and a closing that breaks the outcome rules (Req 12.2, 13.1).
+
+Status changes are recorded by `repo.set_status`, which writes the event in the same transaction (Req 16.4). Each operation uses its own connection and one `BEGIN IMMEDIATE` transaction, so a failure rolls back every write of that operation (Req 16.5). A file whose `user_version` is newer than the app knows is refused rather than opened.
+
 ### Changes to an existing store
 
 Each migration is a numbered SQL script. On start, the Store reads `PRAGMA user_version`, applies each later script in its own transaction and bumps the version. This is safe to run on every start: an up-to-date Store applies nothing (Req 16.2). Migrations only add things. A column is never dropped or reinterpreted while a released version reads it.
