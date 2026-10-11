@@ -134,6 +134,7 @@ async def test_send_reply_spawn_close_and_merge(api: Api) -> None:
     trunk_view = await api.view(trunk)
     note = trunk_view["messages"][-1]
     assert note["id"] == note_id and note["role"] == "note" and note["source"]["branch_id"] == t["id"]  # Req 13.7
+    assert [m["notes_after"] for m in trunk_view["messages"]] == [1, 1, 0]  # Req 4.10: the Note comes after both
     assert (await api.c.get(f"/api/messages/{note_id}/preview")).json()["preview"].startswith("<tree_chat_note")
 
     # Closed: no more messages (Req 12.8); reopen keeps the record (Req 12.7).

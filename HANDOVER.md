@@ -23,8 +23,9 @@ Steps 0 to 5 of the approved plan are done and pushed to `main` (9 commits). Las
 | 3 Store | done | `treechat/store/` (SQLite schema with enforcing triggers, migrations, repo) |
 | 4 Provider | done | `treechat/provider/` (Fake with API-rule checks, Anthropic adapter) |
 | 5 Services and jobs | done | `treechat/services/`, `treechat/jobs/`, `tests/test_stateful.py` |
-| **6 HTTP API** | **next** | `treechat/api/` (only `/api/health` and static serving exist) |
-| 7-10 | not started | see below |
+| 6 HTTP API | done (PR open) | `treechat/api/`, `treechat/services/views.py` (read models, documented in design.md) |
+| 7 Front end: reading and writing | done (PR open, stacked on step 6) | `web/src/` (`api.ts`, `state.ts`, `components/`) |
+| **8-10** | **next: step 8** | see below |
 
 171 tests pass (`uv run pytest`, about 2.5 minutes), pyright strict and ruff are clean. 2 live tests are deselected.
 
