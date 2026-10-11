@@ -2,6 +2,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import type { JSX } from "preact";
 import type { BranchView, Marker, ViewMessage } from "../api";
+import { rangesForPassage } from "../anchor/selection";
+import { clearOwner, highlightsSupported, setHighlight } from "../highlights";
 import { MarkdownView, PlainView } from "../markdown/MarkdownView";
 import { groupMarkers, intentLabel, overlaps, type MarkerGroup } from "../markers";
 import { highlight, makeAlternative, navigate } from "../state";
@@ -9,6 +11,10 @@ import { ManifestDialog } from "./ManifestDialog";
 
 const GLYPH = { parked: "○", open: "●", closed: "✓" } as const;
 const MIN_GAP = 26;
+
+function closeMenu(e: Event): void {
+  (e.currentTarget as HTMLElement).closest("details")?.removeAttribute("open");
+}
 
 function MarkerTip({ markers }: { markers: Marker[] }): JSX.Element {
   return (
@@ -98,14 +104,42 @@ export function MessageBlock({ message, view, inherited, label }: Props): JSX.El
   const hl = highlight.value;
   const active = hl && hl.messageId === message.id ? hl : null;
 
-  // Req 5.2: highlight the passage of the hovered marker.
+  // Req 5.1: anchored passages are underlined in the text, character by character where the browser can
+  // (CSS Custom Highlight API), else by whole rendered run. Colour and line style both say the Status.
+  const owner = useRef({}).current;
+  const underline = groups.map((g) => `${g.start}:${g.end}:${g.status}`).join(",");
   useEffect(() => {
-    const spans = body.current?.querySelectorAll<HTMLElement>("[data-s]") ?? [];
-    spans.forEach((el) => {
+    const root = body.current;
+    if (!root) return;
+    if (highlightsSupported()) {
+      for (const st of ["open", "parked", "closed"] as const) {
+        const ranges = groups.filter((g) => g.status === st).flatMap((g) => rangesForPassage(root, message.content, g.start, g.end));
+        setHighlight(`anchor-${st}`, owner, ranges);
+      }
+      return;
+    }
+    root.querySelectorAll<HTMLElement>("[data-s]").forEach((el) => {
+      const hit = groups.filter((g) => overlaps(Number(el.dataset.s), Number(el.dataset.e), g.start, g.end)).map((g) => g.status);
+      const best = (["open", "parked", "closed"] as const).find((st) => hit.includes(st));
+      if (best) el.dataset.anchored = best;
+      else delete el.dataset.anchored;
+    });
+  }, [message.id, message.content, underline]);
+  useEffect(() => () => clearOwner(owner), []);
+
+  // Req 5.2: strengthen the passage of the hovered marker or graph node.
+  useEffect(() => {
+    const root = body.current;
+    if (!root) return;
+    if (highlightsSupported()) {
+      setHighlight("anchor-hover", owner, active ? rangesForPassage(root, message.content, active.start, active.end) : []);
+      return;
+    }
+    root.querySelectorAll<HTMLElement>("[data-s]").forEach((el) => {
       const on = active !== null && overlaps(Number(el.dataset.s), Number(el.dataset.e), active.start, active.end);
       el.classList.toggle("hl", on);
     });
-  }, [active?.start, active?.end, message.id]);
+  }, [active?.start, active?.end, message.id, message.content]);
 
   // Req 5.1: each marker sits beside its passage; markers never overlap each other.
   useLayoutEffect(() => {
@@ -137,23 +171,47 @@ export function MessageBlock({ message, view, inherited, label }: Props): JSX.El
         <span class="who">{label ?? (isNote ? "Note" : message.role === "user" ? "You" : "Assistant")}</span>
         {message.cut_off && <span class="cutoff">cut off at the output limit</span>}
         <Alternatives message={message} view={view} />
-        <span class="actions">
-          {message.role === "user" && (
-            <button type="button" onClick={() => setEditing(message.content)}>
-              Edit
-            </button>
-          )}
-          {message.role === "assistant" && (
-            <>
-              <button type="button" onClick={() => void makeAlternative(message.id)}>
-                Regenerate
+        <details class="more">
+          <summary aria-label="More actions" title="More actions">
+            ⋯
+          </summary>
+          <div class="more-pop">
+            {message.role === "user" && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  closeMenu(e);
+                  setEditing(message.content);
+                }}
+              >
+                Edit as an alternative
               </button>
-              <button type="button" onClick={() => setShowContext(true)}>
-                Context
-              </button>
-            </>
-          )}
-        </span>
+            )}
+            {message.role === "assistant" && (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    closeMenu(e);
+                    void makeAlternative(message.id);
+                  }}
+                >
+                  Regenerate as an alternative
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    closeMenu(e);
+                    setShowContext(true);
+                  }}
+                >
+                  See what the model was sent
+                </button>
+              </>
+            )}
+            {isNote && <span class="muted">Notes cannot be edited.</span>}
+          </div>
+        </details>
       </header>
       {isNote && message.source && (
         <p class="note-title">

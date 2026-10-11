@@ -63,10 +63,13 @@ Around the core:
 | Reach of a Note | **A Note reaches later replies in its target, and Branches whose Fork_Point is the Note or later.** **Known limit:** with the default Fork_Point (the Anchor), a new Tangent anchored on any passage *above* the Note will not see it. | Follows from append-only merges plus Anchor-based Fork_Points. *Pushback:* the owner's "only branches forked after a merge inherit its note" understates this. Timing is not enough; the Fork_Point must be at or after the Note. The tip-fork option (Req 9) is the way to bring Notes along. See Open question 6. |
 | Conclusions | **Required for `merged` and `kept`, optional for `abandoned`. The close panel arrives pre-filled with a model draft.** | Owner accepted, 11 Oct 2026. Requiring a Conclusion is what makes closing count. Pre-filling it makes the requirement cheap, so closing stays easier than drifting. `abandoned` stays frictionless, so dead ends get closed rather than left open. (Req 12.1–12.2) |
 | Generated text | **Generated_Intent at spawn when no Intent is given, from the Anchor and its Message only. A "where it stands" line when a Branch with replies is parked. Conclusion drafts on request. None ever enters a Context.** | *Pushback on the handover:* "auto-summary when the intent was skipped" has nothing to summarise for a freshly parked Tangent, which has no Messages. So it is generated *from the Anchor* at spawn. The summary of progress is a separate thing, made at park time. (Req 11) |
-| Visualisation | **Three views: the Path_View for reading, the Outline (sidebar) for keyboard navigation, and a Tree_Map with semantic zoom for the overview. *Superseding* "no node-and-edge graph".** | Owner's request, 11 Oct 2026: see the whole tree and where you are, from a few macro-branches down to individual messages. My earlier objection was to a graph that draws every Message at once. Semantic zoom answers it, because detail appears only when it has room to be read. The Outline stays, because it is the keyboard and screen-reader route and costs little. (Req 14) |
-| Tree_Map layout | **Tracks: x = Conversation_Position, one horizontal Track per Branch; a child Track starts under its parent at its Anchor's x; rows in depth-first order.** | It answers "where am I in the conversation" as well as "where am I in the tree": the Trunk reads left to right like the chat itself, and a tangent visibly leaves at the passage it is about. Messages become ticks on Tracks, which gives the "actual leaves" level for free. A conventional node-link tree (one dot per Branch) was rejected because it has no natural place for Messages and loses where along the parent a tangent left. **Known limit:** adding a Branch inserts rows, so Tracks below it move down. Their order never changes. |
-| Level of detail | **Collapse by on-screen size, not by depth: a subtree whose expanded box would be under 24 px tall (or whose Tracks would be under 6 px apart) on screen is drawn as one Macro_Branch. The path to the current Branch is always expanded.** | Depth-based levels fail on lopsided trees: one deep rabbit hole and twenty shallow tangents need different treatment. Size-based collapse is how maps show cities as you zoom. It is monotone in zoom by construction, so there is no flicker (Req 14.18). The "you are here" path is exempt, so the current position is visible at every zoom (Req 14.13). |
-| Tree_Map rendering | **SVG drawn by Preact. The pan/zoom transform is our own (pointer, wheel and keys). Only what is in the viewport is drawn. Layout and level of detail are pure TypeScript functions.** | 500 Tracks plus visible ticks is well within SVG's comfort. Culling to the viewport keeps 10,000 Messages cheap (Req 14.17). Pure functions make the rules property-testable. **Risk:** if SVG misses 30 fps on the owner's machine, the drawing layer moves to Canvas; layout and level of detail are unaffected. |
+| Visualisation | **One screen, two parts: the Path_View for reading and the Branch_Graph (the Outline, which is also the Tree_Map when enlarged) for navigation. *Superseding* "no node-and-edge graph" and the earlier three separate views.** | Owner's requests, 11 Oct 2026: see the whole tree and where you are; then "a single unified view". The earlier objection was to a graph that draws every Message at once; collapsing answers it. The graph keeps keyboard and screen-reader operation (Req 14.6, 18.8). (Req 14, 18) |
+| One pane for graph and map | **The Branch_Graph is the Tree_Map: one pane beside the Path_View, which pans and zooms and can be enlarged to the whole window with `M`. x = depth (Trunk at the left), not Conversation_Position.** | Owner's decision, 11 Oct 2026: "a single unified view", graph and conversation side by side, "with the zoomable map too", unsure whether it is a separate screen. One component answers both: a separate map screen would be a second picture of the same Tree. *Superseding* the Tracks layout (x = Conversation_Position), because the owner asked for depth as the implicit direction. **Cost:** where a Branch leaves its parent along the conversation is no longer drawn; sibling order still uses it (Req 18.6). |
+| Level of detail | **Relevance first: the neighbourhood of the current Branch is drawn, the rest collapses (Req 18.3). Collapse by on-screen size (a subtree under 24 px tall becomes one node) and message ticks come later, in the same pane.** | Relevance gives the owner what was asked for now and is easy to test (Properties 17-18). Size-based collapse is how maps stay readable when zoomed far out, and is worth building once the owner has used the graph. (Req 14.10-14.14, later.) |
+| Graph rendering | **SVG drawn by Preact. The pan/zoom transform is our own (pointer, wheel and keys). Only nodes in the viewport are drawn. Visibility and layout are pure TypeScript functions.** | 500 Branches with collapsing is a few dozen nodes on screen. Pure functions make the rules property-testable (Properties 17-19). **Risk:** if SVG misses 30 fps on the owner's machine, the drawing layer moves to Canvas; visibility and layout are unaffected. (Req 14.17, 18.10) |
+| Branch_Graph | **The Outline is a node-link diagram, always visible beside the Path_View. Columns are depth (Trunk at the left); rows come from a tidy-tree layout (leaves on consecutive rows, a parent centred on its children). Focus plus context: the path to the current Branch, its siblings at every level and its children are drawn in full; the children of every other Branch collapse into one counted node. Drawn as SVG by Preact; layout and visibility are pure TypeScript.** | Owner's request, 11 Oct 2026 (UI review): "see neighbouring branches and the parent at once, a typical DAG-type view with implicit direction (depth)". The indented list shows structure only as indentation and gave no sense of neighbours. Depth-as-x makes direction implicit, and showing siblings of every ancestor answers "where could I go from here". Collapsing by relevance rather than by depth keeps 500 Branches drawable (Req 18.10). **Left and right keys follow the picture** (parent, first child), which changed Req 14.6. It is the *same data and the same rules* as the Outline, drawn differently, so Req 14.1-14.2 and 14.6 still hold. **It is the Tree_Map:** see the next row. **Known limit:** every sibling on the path is drawn (Req 18.3), so a Branch with very many children (the test tree has 175 under the Trunk) is a tall column; the camera centres on the current Branch and Fit shows the whole. Grouping far siblings into one node is a possible later change. |
+| Anchored passages | **Underlined in the text, coloured by Status, as well as the margin mark.** | Owner accepted, 11 Oct 2026. A small mark in the margin does not tell you that a passage you are reading has a Branch. Hovering a margin mark or a graph node strengthens the underline. (Req 5.1) |
+| Trees list | **A menu in the top bar, not a column.** | The permanent column took a fifth of the width for something used when switching Trees, and the Branch_Graph needs that room. (Req 1.2) |
 | Rabbit-hole cues | **Depth and open/parked counts always visible; one-key Close; optional reply-count nudge (default 8)** | Owner accepted, 11 Oct 2026. These are cheap, constant and non-blocking. Hard limits (depth caps, maximum open Branches) were rejected: the owner wants no depth cap, and hard limits push people towards workarounds. (Req 15) |
 | Backend language | **Python 3.14.** F# was the close second; Haskell was rejected. | Owner accepted, 11 Oct 2026. An honest comparison: **F#** gives discriminated unions and exhaustive matching, which suit the Status machine and manifest entries well, and FsCheck works. Against it: no .NET toolchain is installed here, and SSE streaming and markdown support are thinner. **Haskell** gives the strongest types, but has no official Anthropic SDK and the slowest iteration; the domain is not hard enough to repay that. **Python** has the provider's first-party SDK, where features land first (thinking blocks, fallbacks, caching). It also has **Hypothesis stateful testing**, which matches this product's riskiest part (sequences of spawn/park/close/merge/switch) better than anything in the other two. Frozen dataclasses, `match`/`assert_never` and pyright strict cover most of what F# would add. **TypeScript end to end** was also weighed (shared types with the Front_End). It lost on property-testing depth. |
 | Web layer | **FastAPI on uvicorn; replies streamed as `text/event-stream`** | Pydantic gives the field-named validation errors the requirements ask for. SSE is one-directional and enough for streaming; WebSockets add nothing here. |
@@ -139,8 +142,8 @@ All paths are under `http://127.0.0.1:<port>`.
 | `POST` | `/api/trees` | Create Tree with Trunk | 1.1, 1.4 |
 | `PATCH` | `/api/trees/{tree_id}` | Rename | 1.3, 1.4 |
 | `GET` | `/api/trees/{tree_id}` | Tree with all Branch summaries (Outline data) | 14.1–14.2 |
-| `GET` | `/api/trees/{tree_id}/map` | Everything the Tree_Map needs: per Branch its parent, Anchor position, start position, message count, Status, Intent; per Message its role and position (no content) | 14.8–14.18 |
-| `GET` | `/api/messages/{message_id}/preview` | First 200 characters of a Message, for Tree_Map hover | 14.14 |
+| `GET` | `/api/trees/{tree_id}/map` | Everything the later message-level zoom of the Branch_Graph needs: per Branch its parent, Anchor position, start position, message count, Status, Intent; per Message its role and position (no content) | 14.8–14.18 |
+| `GET` | `/api/messages/{message_id}/preview` | First 200 characters of a Message, for hovering a message tick (later) | 14.14 |
 | `GET` | `/api/trees/{tree_id}/queue?order=oldest\|newest\|parent` | Parked Branches with staleness facts | 10.2, 10.4–10.5 |
 | `GET` | `/api/branches/{branch_id}/view` | Path_View: inherited entries, framing, own Messages, markers | 5, 14.4 |
 | `POST` | `/api/branches` | Spawn a Tangent | 4, 9.1 |
@@ -232,7 +235,7 @@ Context_Manifest (`GET /api/messages/{id}/manifest`):
 
 - `GET /api/trees`: array of `{id, title, trunk_branch_id, created_at, last_activity_at, open_count, parked_count}` (Req 1.2). The counts exclude the Trunk.
 - `POST /api/trees` (201), `PATCH /api/trees/{id}` and `GET /api/trees/{id}`: `{id, title, trunk_branch_id, created_at, last_activity_at, branches: [Branch summary…]}` (Req 1.1, 14.1).
-- Branch summary: the spawn response above, plus `parent_label` (the parent's Intent, else its labelled Generated_Intent, else its quote; "Trunk"), `standing` (the "where it stands" line, Req 11.2), `status_since`. `generated_intent` is null whenever the user wrote an `intent` (Req 11.4). Each `closings` item is `{outcome, conclusion, merge_target, note_message_id, closed_at}`.
+- Branch summary: the spawn response above, plus `anchor_position` (the Anchor Message's Conversation_Position, null for the Trunk; the Branch_Graph orders siblings by it, Req 18.6), `parent_label` (the parent's Intent, else its labelled Generated_Intent, else its quote; "Trunk"), `standing` (the "where it stands" line, Req 11.2), `status_since`. `generated_intent` is null whenever the user wrote an `intent` (Req 11.4). Each `closings` item is `{outcome, conclusion, merge_target, note_message_id, closed_at}`.
 - `GET /api/trees/{id}/queue?order=…`: array of Branch summaries in queue order. Staleness is `parked_at` and `parent_messages_since_fork` (Req 10.2, 10.4, 10.5). An unknown `order` is a `validation` error on `order`.
 - `GET /api/trees/{id}/map`: `{tree_id, trunk_branch_id, branches: [{id, parent_branch_id, kind, status, depth, intent, generated_intent, created_at, anchor_message_id, anchor_position, start_position, message_count, messages: [{id, role, position}]}]}`. Positions are Conversation_Positions computed in one pass (`rules.message_positions`). No message text (Req 14.8–14.14).
 - `GET /api/branches/{id}/view`: `{branch, breadcrumb, inherited, framing, messages, tip_message_id, awaiting_reply, reply_in_progress, assistant_reply_count, merge_targets, open_descendants}`.
@@ -286,7 +289,19 @@ def staleness(branch: BranchSummary, parent_chain: Sequence[MessageMeta], now: d
     # Req 10.5: age and parent messages since fork; facts only.
 ```
 
-### Tree_Map logic (pure TypeScript, `web/src/map/`)
+### Branch_Graph logic (pure TypeScript, `web/src/graph/`)
+
+```ts
+visibleGraph(branches: BranchSummary[], currentId: string, expanded: ReadonlySet<string>): GraphNodes
+  // Req 18.3-18.4, 18.6: which Branches are drawn as nodes and which hide inside a counted stub under their parent.
+  // Always drawn: the path to the current Branch, its siblings at every level, the current Branch's children.
+  // Siblings are ordered by (anchor_position, anchor start, created_at, id).
+
+layoutGraph(nodes: GraphNodes): GraphLayout
+  // Req 18.1, 18.6: x = depth column; y = tidy-tree rows (leaves on consecutive rows, parents centred on their children).
+```
+
+### Later: size-based level of detail for the Branch_Graph (pure TypeScript, `web/src/graph/`)
 
 ```ts
 layoutTracks(tree: MapData): Layout
@@ -470,29 +485,47 @@ validates.*
 
 **Validates: Requirements 7.3, 11.5**
 
-### Property 13: Every Branch is drawn exactly once
+### Property 13: Every Branch is drawn exactly once *(superseded for the unified pane by Property 17; returns with size-based collapse)*
 
 *For any* Tree, viewport and current Branch, each Branch appears in the Scene exactly once: as its own Track, or inside exactly one Macro_Branch. Macro_Branches never nest or overlap.
 
 **Validates: Requirements 14.10, 14.12**
 
-### Property 14: You are always here
+### Property 14: You are always here *(met by Property 18)*
 
 *For any* Tree, viewport and current Branch, every Branch on the path from the Trunk to the current Branch is drawn as its own Track, and the current Branch is marked.
 
 **Validates: Requirement 14.13**
 
-### Property 15: Tracks are where they belong
+### Property 15: Tracks are where they belong *(superseded by Property 19: x is depth)*
 
 *For any* Tree, every Track starts at its Anchor's Conversation_Position, lies below its parent and earlier siblings' subtrees, and no two Tracks share a row segment.
 
 **Validates: Requirement 14.9**
 
-### Property 16: Zoom is monotone
+### Property 16: Zoom is monotone *(applies when size-based collapse is built)*
 
 *For any* Tree and viewport centre, and any two zoom levels k1 < k2, every subtree expanded at k1 is also expanded at k2.
 
 **Validates: Requirements 14.11, 14.18**
+
+### Property 17: Every Branch is drawn or counted exactly once
+
+*For any* Tree, current Branch and set of expanded Branches, each Branch is either a node in the Branch_Graph or counted in exactly one collapsed node; the counts of a collapsed node (all, `open`, `parked`) equal those of the Branches it hides.
+
+**Validates: Requirements 18.3, 18.4**
+
+### Property 18: The neighbourhood is always drawn
+
+*For any* Tree, current Branch and set of expanded Branches (including none), the path from the Trunk to the current Branch, every sibling of every Branch on it, and the children of the current Branch are all nodes.
+
+**Validates: Requirement 18.3**
+
+### Property 19: Layout puts depth left to right without overlap
+
+*For any* Tree, every node's x is determined by its depth alone, a child is to the right of its parent, no two nodes overlap, and siblings keep the order of (anchor position, offset, creation time). Adding a Branch never reorders existing siblings.
+
+**Validates: Requirements 18.1, 18.6**
 
 ## Error Handling
 
@@ -527,14 +560,14 @@ Guarantees:
   - The Fake provider returns signed-looking thinking blocks, so replay is exercised without a real model.
 - **Unit tests**: every validation rule at its boundaries (199, 200 and 201 characters; offsets at 0, `len` and `len+1`), the Note format, and queue ordering.
 - **Integration tests**: FastAPI's test client against a temporary SQLite file with the Fake provider. They cover the SSE flow, `busy`, disconnect-then-`live`, a provider failure leaving the user Message, migrations on a Store built by the previous schema, and the immutability triggers rejecting UPDATE and DELETE.
-- **Front_End tests**: Vitest, plus fast-check for Properties 13–16 (generated trees up to 500 Branches, random viewports and current Branches) and for the selection-to-source-offset mapping. *For any* markdown document and any selection inside one rendered Message, the mapped source slice is what the Backend_API will accept, and it contains the selected text.
+- **Front_End tests**: Vitest, plus fast-check for Properties 13–19 (generated trees up to 500 Branches, random viewports and current Branches) and for the selection-to-source-offset mapping. *For any* markdown document and any selection inside one rendered Message, the mapped source slice is what the Backend_API will accept, and it contains the selected text.
   - This mapping is **built first, as a spike**. If it proves unreliable on lists, code blocks or tables, the fallback is to anchor on whole blocks there. That would change Req 4.1, so it would come back to the owner.
 - **Live provider check** (optional, never in the default run, and only with the owner's go-ahead each time): `pytest -m live` makes **at most 5 short requests** (`max_tokens` 1500, effort `low`; two of them carry a roughly 5,000-token prefix so that caching can be seen). It costs a few cents. It checks two things:
   - that a second sibling Tangent reads the shared prefix from the cache (`cache_read_input_tokens > 0`);
   - that a parent → child → grandchild chain replies successfully with `thinking.block_binding.prefix_mismatch_behavior: "error"` set, so the real API enforces Property 7.
 - **The fake provider checks request shape.** `FakeProvider` rejects any request the real API would reject: a system message not after a user turn or not before an assistant turn, consecutive same-role turns, an assistant turn last (no prefill), a thinking block without a signature or carrying `cache_control`, more than four breakpoints, sampling parameters. A property test renders a reply request for every reply-ready Branch of random trees and passes each through that check.
-- **Not automated, by design**: readability of the Outline, Path_View and Tree_Map, and Tree_Map frame rate, at 500 Branches (Req 14.7, 14.17). This is checked manually with a seeded synthetic Tree, served by the Fake provider, so it costs nothing.
+- **Not automated, by design**: readability of the Branch_Graph and Path_View, and the Branch_Graph's frame rate, at 500 Branches (Req 14.7, 14.17). This is checked manually with a seeded synthetic Tree, served by the Fake provider, so it costs nothing.
 
 ## Open questions
 
-None. The owner accepted every recommendation on 11 Oct 2026: the v1 boundary (with no deletion), inheriting as "what the parent knew", framing placement, `open` semantics, queue ordering and staleness, the Note reach limit with its popover warning, closing and reopening rules, ancestor merge targets, the Note format, the nudge (on, after 8 replies), generated descriptions, the stack, the Track layout, keeping the Outline alongside the Tree_Map, and the Tree_Map as a full view on `M`.
+None. The owner accepted every recommendation on 11 Oct 2026, including the later UI review: the Branch_Graph shows the current neighbourhood in full and collapses the rest; Park, Resume and Reopen buttons now, with the Close panel and Queue left to step 8; anchored passages underlined; and one unified view, with the graph and the zoomable map as one pane. Earlier decisions: the v1 boundary (with no deletion), inheriting as "what the parent knew", framing placement, `open` semantics, queue ordering and staleness, the Note reach limit with its popover warning, closing and reopening rules, ancestor merge targets, the Note format, the nudge (on, after 8 replies), generated descriptions and the stack.

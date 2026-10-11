@@ -35,13 +35,15 @@ class _Extras:
     closings: dict[BranchId, list[repo.ClosingRow]]
     generated: dict[BranchId, str]
     standing: dict[BranchId, str]
+    positions: dict[MessageId, int]  # Conversation_Position of every Message, for Anchor positions (Req 18.6)
 
 
-def _extras(c: Any, tree_id: TreeId) -> _Extras:
+def _extras(c: Any, tree_id: TreeId, snap: TreeSnapshot) -> _Extras:
     return _Extras(
         repo.closings_in_tree(c, tree_id),
         repo.latest_generated_in_tree(c, tree_id, "intent"),
         repo.latest_generated_in_tree(c, tree_id, "standing"),
+        rules.message_positions(snap),
     )
 
 
@@ -95,6 +97,7 @@ def _summary(snap: TreeSnapshot, b: Branch, depth: int, x: _Extras) -> dict[str,
             "end": b.anchor.end,
             "quoted_text": b.anchor.quoted_text,
         },
+        "anchor_position": x.positions[b.anchor.message_id] if b.anchor else None,
         "fork_point_message_id": b.fork_point_message_id,
         "intent": b.intent,
         "generated_intent": None if b.intent else x.generated.get(b.id),
@@ -136,7 +139,8 @@ def tree_out(ctx: Ctx, tree_id: TreeId) -> dict[str, Any]:
         t = repo.get_tree(c, tree_id)
         if t is None:
             raise NotFound(f"Unknown tree {tree_id}.")
-        snap, x = repo.load_snapshot(c, tree_id), _extras(c, tree_id)
+        snap = repo.load_snapshot(c, tree_id)
+        x = _extras(c, tree_id, snap)
     depths = _depths(snap)
     return {
         "id": t.id,
@@ -151,7 +155,7 @@ def tree_out(ctx: Ctx, tree_id: TreeId) -> dict[str, Any]:
 def branch_out(ctx: Ctx, branch_id: BranchId) -> dict[str, Any]:
     with ctx.store.read() as c:
         snap = snapshot_of_branch(c, branch_id)
-        x = _extras(c, snap.branches[branch_id].tree_id)
+        x = _extras(c, snap.branches[branch_id].tree_id, snap)
     return _summary(snap, snap.branches[branch_id], rules.depth(snap, branch_id), x)
 
 
@@ -160,7 +164,8 @@ def queue_out(ctx: Ctx, tree_id: TreeId, order: QueueOrder) -> list[dict[str, An
     with ctx.store.read() as c:
         if repo.get_tree(c, tree_id) is None:
             raise NotFound(f"Unknown tree {tree_id}.")
-        snap, x = repo.load_snapshot(c, tree_id), _extras(c, tree_id)
+        snap = repo.load_snapshot(c, tree_id)
+        x = _extras(c, tree_id, snap)
     depths = _depths(snap)
     return [_summary(snap, snap.branches[e.branch_id], depths[e.branch_id], x) for e in queue(snap, order)]
 
@@ -171,8 +176,9 @@ def map_out(ctx: Ctx, tree_id: TreeId) -> dict[str, Any]:
         t = repo.get_tree(c, tree_id)
         if t is None:
             raise NotFound(f"Unknown tree {tree_id}.")
-        snap, x = repo.load_snapshot(c, tree_id), _extras(c, tree_id)
-    pos = rules.message_positions(snap)
+        snap = repo.load_snapshot(c, tree_id)
+        x = _extras(c, tree_id, snap)
+    pos = x.positions
     depths = _depths(snap)
     branches: list[dict[str, Any]] = []
     for b in snap.branches.values():
@@ -245,7 +251,7 @@ def view_out(ctx: Ctx, branch_id: BranchId) -> dict[str, Any]:
     """
     with ctx.store.read() as c:
         snap = snapshot_of_branch(c, branch_id)
-        x = _extras(c, snap.branches[branch_id].tree_id)
+        x = _extras(c, snap.branches[branch_id].tree_id, snap)
     b = rules.branch(snap, branch_id)
     markers, alternatives = _markers(snap, x)
     depths = _depths(snap)

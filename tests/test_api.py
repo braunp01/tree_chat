@@ -396,6 +396,14 @@ async def test_tree_and_outline_data(api: Api) -> None:
     assert {k: by_id[s[k]["id"]]["depth"] for k in ("a", "b", "g")} == {"a": 1, "b": 1, "g": 2}
     assert by_id[s["trunk"]]["kind"] == "trunk" and by_id[s["trunk"]]["depth"] == 0
     assert by_id[s["g"]["id"]]["parent_branch_id"] == s["a"]["id"]
+    # Req 18.6: siblings are ordered by the Conversation_Position of their Anchor Message.
+    with api.state.ctx.store.read() as c:
+        snap = repo.load_snapshot(c, s["tree"])
+    assert by_id[s["trunk"]]["anchor_position"] is None
+    for b in tree["branches"]:
+        if b["anchor"]:
+            assert b["anchor_position"] == rules.conversation_position(snap, b["anchor"]["message_id"])
+    assert by_id[s["a"]["id"]]["anchor_position"] == 1 and by_id[s["b"]["id"]]["anchor_position"] == 3
 
 
 async def test_listing_counts_after_opening(api: Api) -> None:

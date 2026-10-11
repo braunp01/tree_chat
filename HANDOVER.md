@@ -8,7 +8,7 @@ the work stands and how to carry on.
 
 A local, single-user chat client. Every tangent becomes a **Branch** anchored to the passage that prompted it. A
 Branch can be parked in a queue, resumed, and closed with a **Conclusion** that is merged into an ancestor as a
-**Note**. The whole conversation is a strict tree, shown in an Outline and a zoomable Tree_Map. Every Branch
+**Note**. The whole conversation is a strict tree, shown as a Branch_Graph (Outline and zoomable map in one pane) beside the Path_View. Every Branch
 inherits what its parent knew at its fork point (one context rule, no modes). Messages are never edited or deleted.
 
 ## State at handover
@@ -25,7 +25,8 @@ Steps 0 to 5 of the approved plan are done and pushed to `main` (9 commits). Las
 | 5 Services and jobs | done | `treechat/services/`, `treechat/jobs/`, `tests/test_stateful.py` |
 | 6 HTTP API | done (PR open) | `treechat/api/`, `treechat/services/views.py` (read models, documented in design.md) |
 | 7 Front end: reading and writing | done (PR open, stacked on step 6) | `web/src/` (`api.ts`, `state.ts`, `components/`) |
-| **8-10** | **next: step 8** | see below |
+| UI review | done (PR open, stacked on step 7) | One unified view: Branch_Graph beside the Path_View (`web/src/graph/`), top bar with Trees menu and Park/Resume/Reopen, exact-character underlines (`highlights.ts`). Req 18; Tree_Map merged into the graph pane |
+| **8-10** | **next: step 8** | see below, with the changes noted under step 8 and 9 |
 
 171 tests pass (`uv run pytest`, about 2.5 minutes), pyright strict and ruff are clean. 2 live tests are deselected.
 
@@ -160,18 +161,9 @@ card, own messages rendered with `web/src/markdown/MarkdownView.tsx`. Composer w
 opens, Escape cancels, `fork_at` choice, and the "N notes after this passage, fork at latest instead?" hint (Req 4.10).
 Alternatives switcher (Req 3.4) and manifest inspector (Req 7.8).
 
-**8. Front end: navigation and closing.** Outline with keyboard control and breadcrumb (Req 14.1 to 14.3, 14.6).
-Queue with three orderings, staleness facts, resume with the offer to re-fork at the Tip, close from the Queue
-(Req 10). Close panel: model-drafted conclusion, outcome, merge-target picker (open ancestors only), abandon
-descendants, then navigate to the anchor (Req 12, 13). Reopen. Depth indicator, open and parked counts, one-key
-Close, nudge after 8 replies (Req 15, `TREECHAT_NUDGE_AFTER`).
+**8. Front end: closing and the Queue (reduced by the UI review).** Already done in the UI review: Outline as the Branch_Graph with keyboard control (Req 14.1, 14.2, 14.6, 18), breadcrumb (14.3), depth and open/parked counts (15.1), Park/Resume/Reopen buttons. Remaining: the Queue with three orderings, staleness facts, resume with the offer to re-fork at the Tip, close from the Queue (Req 10); the close panel with model-drafted conclusion, outcome, merge-target picker (open ancestors only), abandon descendants, then navigate to the anchor (Req 12, 13); one-key Close and the nudge after 8 replies (Req 15.2-15.3, `TREECHAT_NUDGE_AFTER`).
 
-**9. Tree_Map** (Req 14.8 to 14.18; decisions in `design.md`: Tracks, size-based Macro_Branches, SVG, own pan and
-zoom). Pure TypeScript `web/src/map/layout.ts` (`layoutTracks`) and `lod.ts` (`levelOfDetail`), with fast-check
-Properties 13 to 16 on generated trees of up to 500 Branches (each Branch drawn exactly once; the path to the current
-Branch always expanded; Tracks at their Anchor position; zoom monotone). Then the SVG renderer: viewport culling,
-wheel/pinch/drag/keyboard zoom, Macro_Branch labels, "you are here", message ticks with hover preview, `M` to open and
-close. **Checkpoint:** screenshots at three zoom levels on a seeded synthetic tree.
+**9. Later enhancement of the Branch_Graph (formerly the separate Tree_Map).** The graph pane already pans, zooms, fits and enlarges with `M` (Req 14.8, 14.17, 18.11). What is left is optional and was deferred by the owner's "one unified view": size-based collapsing of subtrees (Req 14.10-14.12, 14.18), message ticks inside nodes (14.14) and grouping of very many siblings (a 175-child Trunk is a tall column). Do this only if the owner asks after using the graph. Pure functions live in `web/src/graph/visible.ts` and `layout.ts` with Properties 17-19.
 
 **10. Finish.** `scripts/seed_synthetic.py` (fake provider, zero credits) builds a Tree with 500 Branches and 10,000
 Messages for the manual performance and readability check (Req 14.7, 14.17). Search all docs for wording the build

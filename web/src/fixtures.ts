@@ -14,7 +14,7 @@ export function marker(branch_id: string, start: number, end: number, status: Ma
 
 export function summary(id: string, extra: Partial<BranchSummary> = {}): BranchSummary {
   return {
-    id, tree_id: "t1", parent_branch_id: null, parent_label: null, kind: "trunk", anchor: null, fork_point_message_id: null,
+    id, tree_id: "t1", parent_branch_id: null, parent_label: null, kind: "trunk", anchor: null, anchor_position: null, created_at: "t", status_since: "t", fork_point_message_id: null,
     intent: null, generated_intent: null, standing: null, status: "open", depth: 0, message_count: 0, parked_at: null,
     parent_messages_since_fork: 0, closings: [], ...extra,
   };
