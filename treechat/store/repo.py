@@ -65,6 +65,16 @@ def get_tree(conn: sqlite3.Connection, tree_id: TreeId) -> TreeRow | None:
     return None if r is None else _tree_row(r)
 
 
+def tree_id_of_branch(conn: sqlite3.Connection, branch_id: BranchId) -> TreeId | None:
+    r = conn.execute("SELECT tree_id FROM branches WHERE id = ?", (branch_id,)).fetchone()
+    return None if r is None else r["tree_id"]
+
+
+def tree_id_of_message(conn: sqlite3.Connection, message_id: MessageId) -> TreeId | None:
+    r = conn.execute("SELECT tree_id FROM messages WHERE id = ?", (message_id,)).fetchone()
+    return None if r is None else r["tree_id"]
+
+
 def list_trees(conn: sqlite3.Connection) -> list[tuple[TreeRow, int, int]]:
     """Req 1.2: most recently active first, with counts of open and parked Branches."""
     rows = conn.execute(
