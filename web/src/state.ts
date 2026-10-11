@@ -1,9 +1,15 @@
 // Application state (signals) and the operations that change it. Rules live in the Backend_API; this only
 // orchestrates calls and keeps what is on screen current.
 import { signal } from "@preact/signals";
-import { api, ApiError, type BranchView, type ReplyEvent, type SpawnRequest, type TreeListItem } from "./api";
+import { api, ApiError, type BranchView, type ReplyEvent, type SpawnRequest, type TreeDetail, type TreeListItem } from "./api";
 
 export const trees = signal<TreeListItem[]>([]);
+/** Every Branch of the current Tree, for the Branch_Graph (Req 14.1, 18). */
+export const treeDetail = signal<TreeDetail | null>(null);
+/** Branches the user expanded in the graph, per Tree (Req 18.4: kept while the user stays in the Tree). */
+export const expandedByTree = signal<Record<string, string[]>>({});
+/** The Branch_Graph enlarged to the whole window (Req 14.8, 18.11). */
+export const graphEnlarged = signal(false);
 export const branchId = signal<string | null>(null);
 export const view = signal<BranchView | null>(null);
 /** A reply arriving now (Req 2.2) or the error that ended one (Req 2.3). */
@@ -57,12 +63,48 @@ export async function loadTrees(): Promise<void> {
   }
 }
 
+/** Reload the Branch_Graph's data. Failures are quiet: the Path_View still works without it. */
+export async function refreshTree(treeId: string): Promise<void> {
+  try {
+    const t = await api.tree(treeId);
+    if (view.value?.branch.tree_id === treeId) treeDetail.value = t; // ignore a late answer for a Tree we left
+  } catch {
+    /* the graph keeps what it had */
+  }
+}
+
 export async function refreshView(): Promise<void> {
   const id = branchId.value;
   if (!id) return;
   try {
     const v = await api.view(id);
-    if (branchId.value === id) view.value = v;
+    if (branchId.value === id) {
+      view.value = v;
+      void refreshTree(v.branch.tree_id);
+    }
+  } catch (e) {
+    fail(e);
+  }
+}
+
+export function toggleExpanded(id: string): void {
+  const tree = view.value?.branch.tree_id;
+  if (!tree) return;
+  const cur = new Set(expandedByTree.value[tree] ?? []);
+  if (cur.has(id)) cur.delete(id);
+  else cur.add(id);
+  expandedByTree.value = { ...expandedByTree.value, [tree]: [...cur] };
+}
+
+/** Req 10.1, 18.12: park, resume or reopen the current Branch. Closing has its own panel (step 8). */
+export async function changeStatus(action: "park" | "resume" | "reopen"): Promise<void> {
+  const id = branchId.value;
+  if (!id) return;
+  try {
+    await api[action](id);
+    notice.value = null;
+    await refreshView();
+    void loadTrees();
   } catch (e) {
     fail(e);
   }
@@ -73,12 +115,15 @@ async function showBranch(id: string | null): Promise<void> {
   notice.value = null;
   if (!id) {
     view.value = null;
+    treeDetail.value = null;
     return;
   }
   try {
     const v = await api.view(id);
     if (branchId.value !== id) return;
     view.value = v;
+    if (treeDetail.value?.id !== v.branch.tree_id) treeDetail.value = null; // a different Tree: do not draw the old one
+    void refreshTree(v.branch.tree_id);
     // Req 2.6: a reply that is still being written is picked up again, with the text so far.
     if (v.reply_in_progress && stream.value?.branchId !== id) void follow(id, (on) => api.live(id, on));
   } catch (e) {

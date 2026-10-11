@@ -71,7 +71,7 @@ function Inherited({ view, all }: { view: BranchView; all: Map<string, ViewMessa
           ),
         )}
       {anchor && (!open || !anchorInEntries) && (
-        <MessageBlock message={anchor} view={view} inherited label={view.branch.kind === "alternative" ? "Replaced message" : "Anchor message"} />
+        <MessageBlock message={anchor} view={view} inherited label={view.branch.kind === "alternative" ? "Replaced message" : "Branched from here"} />
       )}
     </section>
   );

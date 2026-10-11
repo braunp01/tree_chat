@@ -35,6 +35,10 @@ export interface BranchSummary {
   parent_label: string | null;
   kind: Kind;
   anchor: AnchorRef | null;
+  /** Conversation_Position of the Anchor Message (null for the Trunk); orders siblings (Req 18.6). */
+  anchor_position: number | null;
+  created_at: string;
+  status_since: string;
   fork_point_message_id: string | null;
   intent: string | null;
   generated_intent: string | null;
@@ -206,6 +210,9 @@ export const api = {
   createTree: () => call<TreeDetail>("POST", "/trees"),
   renameTree: (id: string, title: string) => call<TreeDetail>("PATCH", `/trees/${id}`, { title }),
   tree: (id: string) => call<TreeDetail>("GET", `/trees/${id}`),
+  park: (branchId: string) => call<BranchSummary>("POST", `/branches/${branchId}/park`),
+  resume: (branchId: string) => call<BranchSummary>("POST", `/branches/${branchId}/resume`),
+  reopen: (branchId: string) => call<BranchSummary>("POST", `/branches/${branchId}/reopen`),
   view: (branchId: string) => call<BranchView>("GET", `/branches/${branchId}/view`),
   send: (branchId: string, content: string) => call<MessageOut>("POST", `/branches/${branchId}/messages`, { content }),
   reply: (branchId: string, onEvent: (e: ReplyEvent) => void) => follow("POST", `/branches/${branchId}/reply`, onEvent),

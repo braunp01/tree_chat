@@ -89,16 +89,17 @@ pinning: owner's decision, 11 Oct 2026), and deleting anything (see Req 16.3). F
   of the Branch (or Branches) anchored there.
 - **Path_View**: the main reading pane for one Branch: what that Branch knows, then its own
   Messages.
-- **Outline**: the tree of Branches (not Messages) shown beside the Path_View.
-- **Tree_Map**: a zoomable picture of the whole Tree. It shows more detail as the user zooms in:
-  Macro_Branches when zoomed out, then individual Tracks, then individual Messages.
-- **Track**: how the Tree_Map draws one Branch: a horizontal line that starts below its parent's
-  Track, at the position of its Anchor, and is as long as the Branch's Messages.
-- **Macro_Branch**: a whole subtree drawn on the Tree_Map as one labelled shape, because at the
-  current zoom it would be too small to read as separate Tracks. It is a way of drawing, not a
-  stored thing.
+- **Outline**: the tree of Branches (not Messages) shown beside the Path_View, drawn as the Branch_Graph.
+- **Branch_Graph**: the Outline drawn as a node-link diagram: one node per Branch, an edge from each parent to its children, the Trunk at the left and depth increasing to the right, so direction is implicit in position. It shows the current Branch's neighbourhood in full (path from the Trunk, siblings, children) and hides everything else in collapsed nodes.
+- **Tree_Map**: the Branch_Graph enlarged to fill the window (`M`) and zoomed and panned freely. It is
+  the same pane as the Branch_Graph, not a separate view (owner's decision, 11 Oct 2026: one unified view).
+- **Track**: how a later, more detailed zoom of the Branch_Graph draws one Branch's Messages: a short
+  horizontal line inside the node, as long as the Branch's Messages. (Later; see Req 14.14.)
+- **Macro_Branch**: a collapsed node of the Branch_Graph: a whole hidden subtree drawn as one labelled
+  node (Req 18.3). Collapsing by on-screen size, rather than by relevance, is later (Req 14.10). It is a way
+  of drawing, not a stored thing.
 - **Conversation_Position**: how far into the conversation a Message is: the number of Messages
-  before it on its path from the Trunk's first Message. It is the Tree_Map's horizontal axis.
+  before it on its path from the Trunk's first Message. It orders siblings in the Branch_Graph (Req 18.6).
 - **Backend_API**: the local HTTP server. It is the authority on every rule below.
 - **Front_End**: the browser interface. A limit enforced only there is a convenience.
 - **Store**: the local database file.
@@ -113,7 +114,7 @@ unrelated topics do not share one tree.
 #### Acceptance Criteria
 
 1. WHEN the user creates a Tree, THE Backend_API SHALL create it with a Trunk that has no Messages and return both.
-2. THE Front_End SHALL list Trees, most recently active first, showing each Tree's title and its counts of `open` and `parked` Branches.
+2. THE Front_End SHALL list Trees, in a Trees menu reachable from every view (not a permanent column, so the Branch_Graph gets the space), most recently active first, showing each Tree's title and its counts of `open` and `parked` Branches.
 3. WHEN the user sends the first Message of a Tree that has no title, THE Backend_API SHALL set the title to the first 60 characters of that Message. The user may rename a Tree at any time.
 4. IF a Tree title is empty or longer than 200 characters after trimming, THEN THE Backend_API SHALL reject it without persisting anything and return a validation error identifying the `title` field.
 
@@ -172,7 +173,7 @@ state they are in, so that the tree is visible from inside the conversation.
 
 #### Acceptance Criteria
 
-1. THE Front_End SHALL show an Anchor_Marker beside every anchored passage wherever its Message is displayed, including in the inherited part of a Path_View. The marker distinguishes `parked`, `open` and `closed`.
+1. THE Front_End SHALL show an Anchor_Marker beside every anchored passage wherever its Message is displayed, including in the inherited part of a Path_View. The marker distinguishes `parked`, `open` and `closed`. The anchored passage itself is also underlined in the text, coloured by Status (amended 11 Oct 2026).
 2. THE Front_End SHALL highlight the anchored passage when its marker is hovered or focused, and show the Intent (or Generated_Intent, labelled) of each Branch anchored there.
 3. WHEN several Branches anchor in the same Message, THE Front_End SHALL show one marker per distinct passage, with a count where passages coincide.
 4. WHEN the user activates an Anchor_Marker, THE Front_End SHALL navigate to that Branch, or offer a choice when more than one Branch is anchored there. The Branch's Status does not change.
@@ -292,24 +293,43 @@ becoming unreadable, so that I can move around confidently.
 
 #### Acceptance Criteria
 
-1. THE Front_End SHALL show an Outline of the current Tree's Branches (one row per Branch, not per Message), indented by depth. Each row shows Status, Intent (or labelled Generated_Intent), Kind (Tangent or Alternative) and Message count.
-2. THE Front_End SHALL expand the Outline along the path to the current Branch and collapse `closed` Branches by default. Every node can be expanded and collapsed.
+1. THE Front_End SHALL show an Outline of the current Tree's Branches (one node per Branch, not per Message), drawn as the Branch_Graph (Req 18). Each node shows Status, Intent (or labelled Generated_Intent), Kind (Tangent or Alternative) and Message count.
+2. THE Front_End SHALL expand the Outline along the path to the current Branch (Req 18.3) and collapse `closed` Branches by default. Every other node can be expanded and collapsed.
 3. THE Front_End SHALL show a breadcrumb of the current Branch's ancestry, from the Trunk down, with each level clickable.
 4. THE Front_End SHALL show in the Path_View, for any Branch other than the Trunk, its Inherited_Prefix collapsed to a one-line summary ("N earlier messages from …") with the Anchor's Message always visible; then a framing card (Anchor quote, Intent, Fork_Point); then the Branch's own Messages.
 5. (Retired with Clean mode, 11 Oct 2026.)
-6. THE Front_End SHALL support keyboard navigation of the Outline: up and down to move, left and right to collapse and expand, Enter to open.
+6. THE Front_End SHALL support keyboard navigation of the Outline: up and down move between siblings, left moves to the parent, right moves to the first child, Enter opens the focused Branch, and space expands and collapses. (Amended 11 Oct 2026: left and right used to collapse and expand; with depth running left to right they now follow the picture. `+` and `-` zoom, Req 18.11.)
 7. THE Front_End SHALL remain usable with at least 500 Branches and 10,000 Messages in one Tree. Opening a Branch then completes within one second on the owner's machine.
-8. THE Front_End SHALL open the Tree_Map of the current Tree from any view with one key (`M`), and close it with the same key or Escape, returning to the view the user left.
-9. THE Tree_Map SHALL draw every Branch as a Track. The horizontal axis is Conversation_Position. A Track starts at the Conversation_Position of its Anchor's Message and lies below its parent's Track, below any earlier siblings and their subtrees. Siblings are ordered by Anchor position, then by creation time.
-10. WHILE a subtree would be drawn smaller on screen than the readable minimum, THE Tree_Map SHALL draw it as one Macro_Branch. Its label shows the root Branch's Intent (or labelled Generated_Intent), the number of Branches in it, and how many of them are `open` and `parked`.
-11. WHEN the user zooms in (mouse wheel, pinch, `+`, or activating a Macro_Branch), THE Tree_Map SHALL expand Macro_Branches into their Tracks as they become large enough to read. WHEN the user zooms out, it SHALL collapse them again. Activating a Macro_Branch zooms until it fills the view.
-12. THE Tree_Map SHALL draw every Branch exactly once at every zoom: either as its own Track or inside exactly one Macro_Branch.
-13. THE Tree_Map SHALL always expand the path from the Trunk to the current Branch, at every zoom, and mark the current Branch and its Tip as "you are here".
-14. WHERE a Track is drawn long enough for its Messages to be told apart, THE Tree_Map SHALL show one tick per Message (user, assistant and Note distinguishable) and mark where child Tracks leave it. Hovering a tick shows the start of that Message. Activating it opens that Branch in the Path_View, scrolled to that Message.
-15. THE Tree_Map SHALL show each Track's Status with the same visual coding as Anchor_Markers, and draw `closed` Branches muted.
-16. THE Tree_Map SHALL support pan and zoom from the keyboard (arrow keys, `+` and `-`) as well as the pointer. Activating a Track opens that Branch.
-17. THE Tree_Map SHALL pan and zoom smoothly (at least 30 frames per second on the owner's machine) with 500 Branches and 10,000 Messages.
-18. WHEN the user zooms in or out, THE Tree_Map SHALL never collapse something that a smaller zoom showed expanded at the same place, so detail does not flicker in and out.
+8. THE Front_End SHALL enlarge the Branch_Graph to fill the window with one key (`M`) and restore it with the same key or Escape, returning to the view the user left. (Amended 11 Oct 2026: the Tree_Map is the enlarged Branch_Graph, one pane, not a separate view.)
+9. (Superseded 11 Oct 2026 by Req 18.1 and 18.6: the horizontal axis is depth, not Conversation_Position. Conversation_Position now only orders siblings.)
+10. (Later, same pane.) WHILE a subtree would be drawn smaller on screen than the readable minimum, THE Branch_Graph SHALL draw it as one collapsed node. Its label shows the root Branch's Intent (or labelled Generated_Intent), the number of Branches in it, and how many of them are `open` and `parked`. Until this is built, Req 18.3 decides what is collapsed.
+11. (Later, same pane.) WHEN the user zooms in or out, THE Branch_Graph SHALL expand or collapse nodes by their on-screen size. Activating a collapsed node zooms until it fills the view.
+12. (Later, with 10.) THE Branch_Graph SHALL draw every Branch exactly once at every zoom: either as its own node or inside exactly one collapsed node. (Met for relevance-based collapsing by Req 18.3 and Property 17.)
+13. (Met by Req 18.3.) THE Branch_Graph SHALL always expand the path from the Trunk to the current Branch, and mark the current Branch.
+14. (Later, same pane.) WHERE a node is drawn large enough for its Messages to be told apart, THE Branch_Graph SHALL show one tick per Message (user, assistant and Note distinguishable) and mark where child Branches leave it. Hovering a tick shows the start of that Message. Activating it opens that Branch in the Path_View, scrolled to that Message.
+15. (Met by Req 18.2.) THE Branch_Graph SHALL show each Branch's Status with the same visual coding as Anchor_Markers, and draw `closed` Branches muted.
+16. (Met by Req 18.11.) THE Branch_Graph SHALL support pan and zoom from the keyboard as well as the pointer.
+17. THE Branch_Graph SHALL pan and zoom smoothly (at least 30 frames per second on the owner's machine) with 500 Branches.
+18. (Later, with 11.) WHEN the user zooms in or out, THE Branch_Graph SHALL never collapse something that a smaller zoom showed expanded at the same place, so detail does not flicker in and out.
+
+### Requirement 18: The Branch_Graph
+
+**User Story:** As the user, I want to see the Branch I am in together with its parent, its siblings and its children as a diagram that grows from left to right with depth, so that I always know where I am in the tree and can step to a neighbour in one click.
+
+#### Acceptance Criteria
+
+1. THE Front_End SHALL show the Branch_Graph of the current Tree in a panel beside the Path_View at all times, without a key press: one node per visible Branch, one edge from each parent to its children, the Trunk at the left and depth increasing to the right.
+2. THE Front_End SHALL draw each node with its Status (a symbol and a colour together, never colour alone), its Kind, its label (Intent, else labelled Generated_Intent, else Anchor quote) and its Message count. It SHALL highlight the current Branch and the edges on its path from the Trunk.
+3. THE Branch_Graph SHALL always draw as nodes: the path from the Trunk to the current Branch, every sibling of each Branch on that path, and the children of the current Branch. The children of any other Branch are hidden in one collapsed node under it that says how many Branches it holds and how many of them are `open` and `parked`.
+4. WHEN the user activates a collapsed node, or the toggle on a node, THE Branch_Graph SHALL expand or collapse that Branch's children. THE Front_End SHALL keep that choice while the user stays in the Tree. What Req 18.3 requires to be drawn cannot be collapsed, and `closed` Branches start collapsed (Req 14.2).
+5. WHEN the user activates a node, THE Front_End SHALL navigate to that Branch. Navigation SHALL NOT change any Status (Req 10.3, 10.8).
+6. THE Branch_Graph SHALL put Branches of equal depth in one column and order siblings by Anchor position (the Anchor Message's Conversation_Position, then the offset), then creation time. Adding a Branch SHALL NOT change the order of existing siblings. An Alternative is drawn with a dashed edge so it reads as a different kind of child.
+7. WHEN the current Branch changes, THE Branch_Graph SHALL scroll so that the current node is in view.
+8. THE Branch_Graph SHALL be fully operable from the keyboard (Req 14.6), and SHALL tell assistive technology each node's label, Status, depth and place among its siblings.
+9. WHEN the user hovers or focuses a node, THE Front_End SHALL show its full label, its Anchor quote, its Status and how long ago the Status last changed.
+10. THE Branch_Graph SHALL draw and respond within one second with 500 Branches in the Tree (Req 14.7), because hidden Branches are not drawn.
+11. THE Branch_Graph SHALL pan (drag, or Shift and the arrow keys) and zoom (wheel, pinch, `+` and `-`) and SHALL offer "fit" (a button, or `0`) to bring the whole drawn graph into view, however small that makes it. WHEN the user presses `M`, THE Front_End SHALL enlarge the panel to fill the window and restore it on `M` or Escape (Req 14.8). WHEN the user activates a node in the enlarged panel, THE Front_End SHALL navigate there and restore the panel.
+12. THE Front_End SHALL show Park, Resume or Reopen for the current Branch in the Path_View header, whichever its Status allows (Req 10.1), so the Status symbols in the Branch_Graph can be acted on. Closing, with its Conclusion, stays in the close panel (Req 12.1).
 
 ### Requirement 15: Discouraging rabbit-holing
 

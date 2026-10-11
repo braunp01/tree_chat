@@ -64,3 +64,44 @@ export function anchorFromRange(range: Range, root: Element, source: string): An
   const end = toCodePoints(source, endU16);
   return { start, end, quoted_text: source.slice(startU16, endU16) };
 }
+
+function fromCodePoints(src: string, cp: number): number {
+  let i = 0;
+  for (let n = 0; n < cp && i < src.length; n++) i += src.codePointAt(i)! > 0xffff ? 2 : 1;
+  return i;
+}
+
+/**
+ * The inverse of `anchorFromRange`: the DOM ranges that render exactly the source passage [start, end) (code points),
+ * so an anchored passage can be shown character by character (Req 5.1, 5.2). One Range per contiguous block of
+ * rendered units; a run that cannot be aligned is included whole if it overlaps.
+ */
+export function rangesForPassage(root: Element, source: string, start: number, end: number): Range[] {
+  const startU = fromCodePoints(source, start);
+  const endU = fromCodePoints(source, end);
+  const doc = root.ownerDocument;
+  const out: Range[] = [];
+  for (const run of mappedRuns(root)) {
+    const s = Number(run.span.dataset.s);
+    const e = Number(run.span.dataset.e);
+    if (!(s < endU && startU < e)) continue;
+    const a = align(run.node.data, source, s, e, run.span.dataset.k as MappedKind);
+    const n = run.node.data.length;
+    let from = -1;
+    const flush = (to: number) => {
+      if (from < 0) return;
+      const r = doc.createRange();
+      r.setStart(run.node, from);
+      r.setEnd(run.node, to);
+      out.push(r);
+      from = -1;
+    };
+    for (let k = 0; k < n; k++) {
+      const inside = a ? a.starts[k]! < endU && startU < a.ends[k]! : true;
+      if (inside && from < 0) from = k;
+      if (!inside) flush(k);
+    }
+    flush(n);
+  }
+  return out;
+}
