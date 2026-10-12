@@ -39,8 +39,8 @@ results back into an ancestor, and any context other than the path.
   assistant Message's parent is a user Message.
 - **Reply**: the assistant Message whose parent is a given user Message. A user Message has at most one.
 - **Root**: the first Message the user typed when creating the Tree; the only Message with no parent.
-- **Current_Point**: where the user is: an assistant Message (or the Root while its Reply is pending). The
-  chat shows the Path to it.
+- **Current_Point**: where the user is: normally an assistant Message; a question still waiting for its Reply
+  can be shown too, but nothing is sent from it (Req 3.10). The chat shows the Path to it.
 - **Path**: the Messages from the Root down to a given Message, in order.
 - **Leaf**: a Message with no children.
 - **Fork**: an assistant Message with more than one child.
@@ -136,7 +136,7 @@ know where I am and can jump to any branch in one click.
 2. THE Front_End SHALL label each node with the start of its first user Message and its Message count, and SHALL highlight the Branch holding the Current_Point and the edges on the Path to it.
 3. THE Branch_Graph SHALL always draw: the Branches on the Path to the Current_Point, their sibling Branches, and the Branches that fork from the current one. Below any other Branch, its descendants are hidden in one collapsed node that says how many Branches it holds.
 4. WHEN the user activates a collapsed node, or the toggle on a node, THE Branch_Graph SHALL expand or collapse it. THE Front_End SHALL keep that choice while the user stays in the Tree. What Req 6.3 requires cannot be collapsed.
-5. WHEN the user activates a node, THE Front_End SHALL make the last Message of that Branch the Current_Point (Req 2.3); if that is a user Message without a Reply, its parent (or the Root itself).
+5. WHEN the user activates a node, THE Front_End SHALL make the last Message of that Branch the Current_Point (Req 2.3). If that is a question still waiting for its Reply, the chat shows it with the control to request the Reply (Req 3.10) and the composer stays off until it is answered.
 6. THE Branch_Graph SHALL order sibling Branches by creation time, so adding a Branch never reorders existing ones.
 7. WHEN the Current_Point changes, THE Branch_Graph SHALL scroll so that its node is in view.
 8. WHEN the user hovers or focuses a node, THE Front_End SHALL show its full label and the Message it forked from.

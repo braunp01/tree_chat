@@ -81,7 +81,7 @@ transaction per operation, `jobs/` the only provider callers, `api/` shapes only
 | `POST` | `/api/trees` | Create a Tree with its Root: `{content}` → `{tree, message}` | 1.1, 1.3 |
 | `PATCH` | `/api/trees/{id}` | Rename | 1.3–1.4 |
 | `GET` | `/api/trees/{id}` | The Tree's shape: every Message without content (id, parent, role, created_at, label = first 60 characters for user Messages), the derived Branches, and the default Current_Point | 2.2, 6 |
-| `GET` | `/api/messages/{id}/path` | The Path to a Message with full content, plus for each Message its child count | 2.1, 2.4 |
+| `GET` | `/api/messages/{id}/path` | The Path to a Message with full content; for each Message its child count; `awaiting_reply`, `reply_in_progress`, and `latest_below` (the most recent Reply below the last Message, for "jump to the latest") | 2.1, 2.4, 3.10 |
 | `POST` | `/api/trees/{id}/messages` | Send: `{parent_id, content}`; `parent_id` is an assistant Message of the Tree | 3.1–3.2, 3.9 |
 | `POST` | `/api/messages/{id}/reply` | Generate the Reply to a user Message (SSE) | 3.3–3.7 |
 | `GET` | `/api/messages/{id}/live` | Re-attach to a Reply in progress (SSE; 204 if none) | 3.8 |

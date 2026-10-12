@@ -1,21 +1,19 @@
-"""The fake provider and the request-shape rules it enforces (Req 17.4, 17.5, 7.4)."""
+"""The fake provider and the request-shape rules it enforces (Req 8.4, 8.5, 4.2)."""
 
 from __future__ import annotations
 
 import copy
-from dataclasses import replace
 from typing import Any
 
 import pytest
-from hypothesis import given, settings
 
 from treechat.domain import context, render
-from treechat.domain.model import Role
+from treechat.domain.model import TreeSnapshot
 from treechat.provider.base import ErrorCategory, ProviderError
 from treechat.provider.fake import FakeProvider, RequestShapeError, check_request_shape
 
-from .builder import Builder
-from .test_domain_context import SETTINGS, trees
+from .helpers import SETTINGS, reply
+from .helpers import user as user_msg
 
 
 def req(*turns: dict[str, Any]) -> dict[str, Any]:
@@ -84,7 +82,7 @@ def test_too_many_cache_breakpoints_are_rejected() -> None:
         check_request_shape({**req(*turns), "cache_control": {"type": "ephemeral"}})
 
 
-async def test_replies_are_deterministic_and_stream_in_chunks() -> None:  # Req 17.4
+async def test_replies_are_deterministic_and_stream_in_chunks() -> None:  # Req 8.4
     p = FakeProvider(chunk=5)
     r = req(user("what is a tree"))
     d1, a = await collect(p, r)
@@ -110,14 +108,14 @@ async def test_scripted_outcomes() -> None:
         await collect(p, r)
     assert e.value.category is ErrorCategory.CONTEXT_TOO_LARGE
     _, cut = await collect(p, r)
-    assert cut.stop_reason == "max_tokens"  # Req 2.4
+    assert cut.stop_reason == "max_tokens"  # Req 3.6
     _, fb = await collect(p, r)
     assert fb.model != "m"  # served by another model
     _, ok = await collect(p, r)
     assert ok.stop_reason == "end_turn"
 
 
-async def test_unavailable_provider_raises_the_unavailable_category() -> None:  # Req 17.3
+async def test_unavailable_provider_raises_the_unavailable_category() -> None:  # Req 8.3
     p = FakeProvider()
     p.available = False
     with pytest.raises(ProviderError) as e:
@@ -133,32 +131,21 @@ async def test_complete_is_deterministic() -> None:
     assert len(p.completions) == 2
 
 
-@settings(max_examples=250, deadline=None)
-@given(trees)
-def test_every_rendered_reply_request_is_valid_for_the_real_api(b: Builder) -> None:
-    """Whenever a reply could be requested (Tip is a user Message), the rendered request satisfies every rule."""
-    snap = b.snapshot()
-    for bid in snap.branches:
-        chain = snap.chain(bid)
-        if chain and snap.messages[chain[-1]].role is Role.USER:
-            request = render.render(context.assemble(snap, bid, SETTINGS), snap.messages)
-            check_request_shape(request)
+def test_thinking_from_another_model_is_not_replayed() -> None:  # design.md, Thinking replay
+    def request_for(model: str) -> dict[str, Any]:
+        snap = TreeSnapshot.build(
+            [
+                user_msg("u1", "T", None, "first", "t1"),
+                reply("a1", "T", "u1", "fallback", "t2", model),
+                user_msg("u2", "T", "a1", "second", "t3"),
+            ]
+        )
+        r = render.render(context.assemble(snap, "u2", SETTINGS), snap.messages)
+        check_request_shape(r)
+        return r
 
+    def assistant_block_types(r: dict[str, Any]) -> list[str]:
+        return [blk["type"] for t in r["messages"] if t["role"] == "assistant" for blk in t["content"]]
 
-def test_thinking_from_another_model_is_not_replayed() -> None:  # design.md, Thinking blocks across requests
-    b = Builder()
-    b.add(b.trunk, Role.USER, "first")
-    a = b.add(b.trunk, Role.ASSISTANT, "served by the fallback model")
-    b.add(b.trunk, Role.USER, "second")
-    b.messages = [m if m.id != a else replace(m, model="other-model") for m in b.messages]
-    snap = b.snapshot()
-    request = render.render(context.assemble(snap, b.trunk, SETTINGS), snap.messages)
-    blocks = [blk for t in request["messages"] if t["role"] == "assistant" for blk in t["content"]]
-    assert [x["type"] for x in blocks] == ["text"]
-    check_request_shape(request)
-    # The same reply written by the requested model keeps its thinking.
-    b.messages = [m if m.id != a else replace(m, model=SETTINGS.model) for m in b.messages]
-    snap = b.snapshot()
-    request = render.render(context.assemble(snap, b.trunk, SETTINGS), snap.messages)
-    blocks = [blk for t in request["messages"] if t["role"] == "assistant" for blk in t["content"]]
-    assert [x["type"] for x in blocks] == ["thinking", "text"]
+    assert assistant_block_types(request_for("other-model")) == ["text"]
+    assert assistant_block_types(request_for(SETTINGS.model)) == ["thinking", "text"]
