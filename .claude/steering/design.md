@@ -20,11 +20,12 @@ The core is pure logic in `treechat/domain/`:
 | Decision | Choice | Rationale |
 |---|---|---|
 | Model | **A tree of immutable Messages. Each Message stores its parent. Branches are derived, not stored.** | Owner, 12 Oct 2026: the only actions are "navigate to an ancestor" and "create a new child". A Message tree says exactly that and nothing more. v1's Branch records (anchor, fork point, framing, status) existed for tangents, parking and merging, which are now out of scope. |
-| Alternating roles | **user → assistant → user …; a user Message has at most one Reply; branching happens only below assistant Messages (or at the Start).** | A Reply is generated, not chosen, and there is no regenerate (Req 5.2). So the only place a choice exists is "what to ask next", which is a child of an assistant Message. It also keeps every Path a valid provider conversation. |
+| Alternating roles | **user → assistant → user …; a user Message has at most one Reply; branching happens only below assistant Messages.** | A Reply is generated, not chosen, and there is no regenerate (Req 5.2). So the only place a choice exists is "what to ask next", which is a child of an assistant Message. It also keeps every Path a valid provider conversation. |
 | Context | **The Path, nothing else: no framing, no notes, no summaries.** | "What the model sees is the conversation on screen." Determinism and prompt caching come for free: every Context is a prefix-extension of its parent Reply's Context. (Req 4) |
 | Thinking replay | **Store each Reply's full provider content, including signed thinking blocks, and replay it unchanged; replay thinking only when the Reply's recorded model equals the requested model.** | Carried over from v1. A Reply's Path never changes (Req 5), so replaying its thinking is always valid. A refusal fallback may answer with another model, whose thinking belongs to that model. |
 | Prompt caching | **One cache breakpoint on the last block before the new user Message; top-level automatic caching for the rest. The system prompt is frozen and versioned.** | Sibling branches from the same point share their whole prefix, so a new branch reads it from the cache. Latency, not cost. (Req 4.3) |
-| Branches for the graph | **The Start is the graph's root node (owner: "a single empty global ancestor"). A Branch starts at the Tree's first Message (or at each child of a Fork) and runs down through single children to the next Fork or Leaf. Computed in one pass in the domain; ordered among siblings by creation time.** | Matches what the eye sees as a "line of conversation". Deriving them means nothing can drift out of sync with the Messages. (Req 6) |
+| Forest | **All Trees form a forest; each Tree has exactly one Root, the first Message typed. A Tree is created by sending its first Message.** | Owner, 12 Oct 2026. A second opening question is a new Tree, so there is no empty start node and no exception to role alternation; the Trees menu is the forest. (Req 1.1, 5.3) |
+| Branches for the graph | **The Root's Branch is the graph's root node. A Branch starts at the Root (or at each child of a Fork) and runs down through single children to the next Fork or Leaf. Computed in one pass in the domain; ordered among siblings by creation time.** | Matches what the eye sees as a "line of conversation". Deriving them means nothing can drift out of sync with the Messages. (Req 6) |
 | Graph | **Kept from the v1 UI review: SVG node-link diagram, depth left to right, the neighbourhood of the current Branch drawn, other subtrees collapsed into counted nodes; pan, zoom, fit, `M` to enlarge. Pure TypeScript for visibility and layout.** | Owner chose to keep it, 12 Oct 2026. Its layout and visibility logic are already property-tested and carry over with small changes (nodes are derived Branches; no Status). |
 | Current_Point in the address | **`#/t/<tree>/m/<message>`, or `#/t/<tree>` for the Tree's default.** | Back and forward work; a point can be bookmarked. |
 | Replies, jobs, streaming | **Kept from v1: one asyncio job per user Message, independent of the HTTP request; SSE stream with catch-up for late subscribers.** | Closing the tab must not lose a paid reply (Req 3.8). The registry keys change from Branch to user Message. |
@@ -66,7 +67,7 @@ transaction per operation, `jobs/` the only provider callers, `api/` shapes only
 
 ### Request flow: send and reply
 
-1. `POST /api/trees/{tree_id}/messages {parent_id, content}`: `parent_id` is the Current_Point (an assistant Message id, or null for the Start). The service validates content (Req 3.9) and the parent (Req 3.2), inserts the user Message, sets the title if needed (Req 1.3), and returns 201 with it.
+1. `POST /api/trees {content}` creates the Tree and its Root (Req 1.1); `POST /api/trees/{tree_id}/messages {parent_id, content}` sends from the Current_Point, an assistant Message of the Tree. The service validates content (Req 3.9) and the parent (Req 3.2), inserts the user Message and returns 201 with it.
 2. `POST /api/messages/{user_message_id}/reply`: checks the user Message has no Reply and no running job (Req 3.7), assembles the manifest from its Path (Req 4.1), renders the request, registers a job and streams SSE.
 3. On completion (or `max_tokens`) the job inserts the Reply with its content blocks, manifest, model and stop reason, then emits `done`. On failure it persists nothing and emits `error` (Req 3.5).
 4. `GET /api/messages/{user_message_id}/live` re-attaches to a running job (204 if none) (Req 3.8).
@@ -77,11 +78,11 @@ transaction per operation, `jobs/` the only provider callers, `api/` shapes only
 |---|---|---|---|
 | `GET` | `/api/health` | Readiness; whether credentials are present (never their value) | 8.3 |
 | `GET` | `/api/trees` | Trees, most recently active first | 1.2 |
-| `POST` | `/api/trees` | Create an empty Tree | 1.1 |
+| `POST` | `/api/trees` | Create a Tree with its Root: `{content}` → `{tree, message}` | 1.1, 1.3 |
 | `PATCH` | `/api/trees/{id}` | Rename | 1.3–1.4 |
 | `GET` | `/api/trees/{id}` | The Tree's shape: every Message without content (id, parent, role, created_at, label = first 60 characters for user Messages), the derived Branches, and the default Current_Point | 2.2, 6 |
 | `GET` | `/api/messages/{id}/path` | The Path to a Message with full content, plus for each Message its child count | 2.1, 2.4 |
-| `POST` | `/api/trees/{id}/messages` | Send: `{parent_id, content}` | 3.1–3.2, 3.9 |
+| `POST` | `/api/trees/{id}/messages` | Send: `{parent_id, content}`; `parent_id` is an assistant Message of the Tree | 3.1–3.2, 3.9 |
 | `POST` | `/api/messages/{id}/reply` | Generate the Reply to a user Message (SSE) | 3.3–3.7 |
 | `GET` | `/api/messages/{id}/live` | Re-attach to a Reply in progress (SSE; 204 if none) | 3.8 |
 | `GET` | `/api/messages/{id}/manifest` | Context_Manifest of a Reply | 4.4–4.5 |
@@ -105,8 +106,9 @@ messages(
 )
 ```
 
-Enforced by triggers (Req 5): no UPDATE or DELETE of messages, no DELETE of trees; a user Message's parent
-is NULL or an assistant Message of the same Tree; an assistant Message's parent is a user Message of the
+Enforced by triggers (Req 5): no UPDATE or DELETE of messages, no DELETE of trees; exactly one parentless
+Message per Tree, and it is a user Message (the Root); every other user Message's parent is an assistant
+Message of the same Tree; an assistant Message's parent is a user Message of the
 same Tree with no other assistant child; an assistant Message carries its blocks, model and manifest.
 Ids are UUIDv7; times are UTC ISO-8601. Each operation is one `BEGIN IMMEDIATE` transaction (Req 7.3).
 
@@ -127,7 +129,7 @@ derived Branches.
 ## Correctness Properties
 
 1. **Immutability.** *For any* sequence of operations, every Message and manifest persisted at step *i* is byte-identical at every later step. (Req 5.1)
-2. **Shape.** *For any* sequence of operations, the Messages form a forest under the Start with alternating roles, at most one Reply per user Message, and parents in the same Tree. (Req 5.3)
+2. **Shape.** *For any* sequence of operations, each Tree is one tree under its Root with alternating roles, at most one Reply per user Message, and parents in the same Tree. (Req 5.3)
 3. **Context is the Path.** *For any* Reply, its manifest lists exactly the Path to its user Message, in order. (Req 4.1)
 4. **Determinism and shared prefixes.** Rendering the same manifest twice gives identical bytes, and two Replies whose Paths share a prefix have byte-identical requests through it. (Req 4.2–4.3)
 5. **Thinking replay is valid.** Every replayed assistant turn is byte-identical to how it was stored, and the request bytes before it equal the request that produced it. (Req 4.2, 5.1)
@@ -138,7 +140,7 @@ derived Branches.
 ## Testing Strategy
 
 - **Zero AI credits by default** (Req 8.5): the Fake provider, and a fixture that blocks non-loopback connections. `pytest -m live` only with the owner's go-ahead.
-- **Hypothesis** for Properties 1–7, including a stateful machine whose rules are: create a Tree, send from a random point (assistant Message or Start), request a Reply with a random Fake outcome (ok, fail, refuse, truncate, fallback, too large), and send from an invalid point. Every new rule test is shown to fail when the rule is broken on purpose.
+- **Hypothesis** for Properties 1–7, including a stateful machine whose rules are: create a Tree, create a Tree with its Root, send from a random point (any assistant Message), request a Reply with a random Fake outcome (ok, fail, refuse, truncate, fallback, too large), and send from an invalid point. Every new rule test is shown to fail when the rule is broken on purpose.
 - **Integration tests** with FastAPI's client on a temporary Store: send, reply, SSE, `busy`, disconnect then `live`, validation field names, triggers rejecting UPDATE/DELETE and bad shapes.
 - **Front end**: Vitest and fast-check for the graph properties, the Path view, the composer and navigation.
 - **Manual**: readability and frame rate with a seeded 500-Branch Tree on the Fake provider (Req 6.11).
@@ -147,7 +149,7 @@ derived Branches.
 
 None. Answered by the owner on 12 Oct 2026, all as recommended:
 
-1. A Tree may have several first questions. As the owner put it, this is the same as one empty global ancestor: the Start is drawn as the root node of the Branch_Graph, and the Tree's first Branches hang from it.
+1. Superseded the same day by the owner's forest decision: each Tree has exactly one Root, the first Message typed; a different opening question is a new Tree.
 2. Opening a Tree goes to the most recently created Reply.
 3. Clicking a graph node goes to the last Message of that Branch.
 4. v1 Stores are left alone; v2 uses a new file.

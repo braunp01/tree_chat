@@ -8,7 +8,7 @@
 Tree Chat is a local chat client for one person talking to an LLM. It looks and works like an ordinary
 chat: the conversation up to where you are, the latest reply, and one box to type in.
 
-The difference is that a conversation is a tree. At any time you can go back to an earlier reply and ask
+The difference is that a conversation is a tree, and all conversations together are a forest. At any time you can go back to an earlier reply and ask
 something else. That adds a new child at that point and leaves everything that was already there
 untouched. A graph of the tree sits beside the chat, so you can always see where you are and jump to
 any branch in one click.
@@ -32,18 +32,20 @@ results back into an ancestor, and any context other than the path.
 
 ## Glossary
 
-- **Tree**: one whole conversation: a tree of Messages.
-- **Message**: an immutable unit of conversation with role `user` or `assistant`. Every Message except a
-  Tree's first Messages has one parent Message. A user Message's parent is an assistant Message; an
+- **Forest**: all Trees. The Trees menu lists them.
+- **Tree**: one whole conversation: a tree of Messages with exactly one Root.
+- **Message**: an immutable unit of conversation with role `user` or `assistant`. Every Message except the
+  Root has one parent Message. A user Message's parent is an assistant Message; an
   assistant Message's parent is a user Message.
 - **Reply**: the assistant Message whose parent is a given user Message. A user Message has at most one.
-- **Start**: the empty beginning of a Tree, before any Message. The Tree's first user Messages hang from it.
-- **Current_Point**: where the user is: an assistant Message, or the Start. The chat shows the Path to it.
-- **Path**: the Messages from the Start down to a given Message, in order.
+- **Root**: the first Message the user typed when creating the Tree; the only Message with no parent.
+- **Current_Point**: where the user is: an assistant Message (or the Root while its Reply is pending). The
+  chat shows the Path to it.
+- **Path**: the Messages from the Root down to a given Message, in order.
 - **Leaf**: a Message with no children.
-- **Fork**: a point (an assistant Message, or the Start) with more than one child.
-- **Branch**: a run of Messages drawn as one node of the Branch_Graph. It starts at a child of a Fork (or
-  at the Tree's only first Message) and continues down through single children until a Fork or a Leaf.
+- **Fork**: an assistant Message with more than one child.
+- **Branch**: a run of Messages drawn as one node of the Branch_Graph. It starts at the Root or at a child of a
+  Fork and continues down through single children until a Fork or a Leaf.
   Branches are derived from the Messages; they are not stored.
 - **Context**: everything sent to the model for one Reply.
 - **Context_Manifest**: the exact, ordered record of a Context (Message ids, model and generation
@@ -61,9 +63,9 @@ results back into an ancestor, and any context other than the path.
 
 #### Acceptance Criteria
 
-1. WHEN the user creates a Tree, THE Backend_API SHALL create it empty and return it.
+1. WHEN the user sends a Message from "New tree", THE Backend_API SHALL create a Tree with that Message as its Root, in one transaction, and return both. No empty Tree exists (owner, 12 Oct 2026: the forest's trees each have one root, the first message typed).
 2. THE Front_End SHALL list Trees in a menu reachable from every view, most recently active first, with each Tree's title.
-3. WHEN the first Message of an untitled Tree is sent, THE Backend_API SHALL set the title to its first 60 characters. The user may rename a Tree at any time.
+3. WHEN a Tree is created, THE Backend_API SHALL set its title to the first 60 characters of the Root. The user may rename a Tree at any time.
 4. IF a title is empty or longer than 200 characters after trimming, THEN THE Backend_API SHALL reject it without persisting anything and return a validation error naming the `title` field.
 
 ### Requirement 2: The chat
@@ -74,7 +76,7 @@ in the way of talking.
 #### Acceptance Criteria
 
 1. THE Front_End SHALL show the Path to the Current_Point as one continuous chat, oldest first, with the composer below it. Nothing on the Path is collapsed.
-2. WHEN the user opens a Tree, THE Front_End SHALL set the Current_Point to the most recently created assistant Message (or the Start of an empty Tree) and show the latest Message.
+2. WHEN the user opens a Tree, THE Front_End SHALL set the Current_Point to the most recently created Reply (or the Root while its Reply is pending) and show the latest Message.
 3. WHEN the user chooses "go back to here" on an assistant Message in the chat, THE Front_End SHALL make it the Current_Point: the chat shows the Path to it and nothing after it. Navigating SHALL create nothing.
 4. WHILE the Current_Point already has children, THE Front_End SHALL say above the composer that sending will start a new branch from here, and offer to jump to the latest Message below it.
 5. THE Front_End SHALL show per-Message actions ("go back to here", "see what was sent") only on hover or focus.
@@ -87,8 +89,8 @@ branching is just talking.
 
 #### Acceptance Criteria
 
-1. WHEN the user sends a non-empty Message, THE Backend_API SHALL persist it as a new child of the Current_Point before any model call is made. There is one Send action.
-2. IF the Current_Point given is not an assistant Message of that Tree, or the Start, THEN THE Backend_API SHALL reject the send with a `conflict` error.
+1. WHEN the user sends a non-empty Message in a Tree, THE Backend_API SHALL persist it as a new child of the Current_Point before any model call is made. There is one Send action. Starting from a blank page is "New tree" (Req 1.1).
+2. IF the Current_Point given is not an assistant Message of that Tree, THEN THE Backend_API SHALL reject the send with a `conflict` error.
 3. WHEN a user Message has no Reply and a reply is requested, THE Backend_API SHALL assemble the Context (Req 4), call the model, stream the reply text as it arrives, and persist the complete Reply with its Context_Manifest when the model finishes.
 4. WHEN the user sends, THE Front_End SHALL request the Reply at once and make the new Reply the Current_Point when it is saved.
 5. IF the model call fails or is refused, THEN THE Backend_API SHALL persist no Reply, keep the user Message, report the error category, and allow the Reply to be requested again.
@@ -121,7 +123,7 @@ branch stays exactly as it was.
 
 1. THE Store SHALL never change or delete a persisted Message or Context_Manifest; an attempt SHALL fail.
 2. THE Backend_API SHALL offer no editing, regenerating or deleting of Messages, and no deleting of Trees.
-3. THE Store SHALL keep the shape rules whatever the application does: a user Message's parent is an assistant Message or the Start, an assistant Message's parent is a user Message, a user Message has at most one Reply, and a parent belongs to the same Tree.
+3. THE Store SHALL keep the shape rules whatever the application does: each Tree has exactly one Root, every other user Message's parent is an assistant Message, an assistant Message's parent is a user Message, a user Message has at most one Reply, and a parent belongs to the same Tree.
 
 ### Requirement 6: The Branch_Graph
 
@@ -130,11 +132,11 @@ know where I am and can jump to any branch in one click.
 
 #### Acceptance Criteria
 
-1. THE Front_End SHALL show the Branch_Graph of the current Tree beside the chat at all times: a root node for the Start, one node per Branch, an edge from each Branch (or the Start) to the Branches that fork from its end, the Start at the left and depth increasing to the right.
+1. THE Front_End SHALL show the Branch_Graph of the current Tree beside the chat at all times: one node per Branch, an edge from each Branch to the Branches that fork from its end, the Root's Branch at the left and depth increasing to the right.
 2. THE Front_End SHALL label each node with the start of its first user Message and its Message count, and SHALL highlight the Branch holding the Current_Point and the edges on the Path to it.
 3. THE Branch_Graph SHALL always draw: the Branches on the Path to the Current_Point, their sibling Branches, and the Branches that fork from the current one. Below any other Branch, its descendants are hidden in one collapsed node that says how many Branches it holds.
 4. WHEN the user activates a collapsed node, or the toggle on a node, THE Branch_Graph SHALL expand or collapse it. THE Front_End SHALL keep that choice while the user stays in the Tree. What Req 6.3 requires cannot be collapsed.
-5. WHEN the user activates a node, THE Front_End SHALL make the last Message of that Branch the Current_Point (Req 2.3); if that is a user Message without a Reply, its parent.
+5. WHEN the user activates a node, THE Front_End SHALL make the last Message of that Branch the Current_Point (Req 2.3); if that is a user Message without a Reply, its parent (or the Root itself).
 6. THE Branch_Graph SHALL order sibling Branches by creation time, so adding a Branch never reorders existing ones.
 7. WHEN the Current_Point changes, THE Branch_Graph SHALL scroll so that its node is in view.
 8. WHEN the user hovers or focuses a node, THE Front_End SHALL show its full label and the Message it forked from.

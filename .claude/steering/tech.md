@@ -60,7 +60,7 @@ uv run treechat
 | `TREECHAT_PORT` | `8765` | Port on 127.0.0.1. |
 | `TREECHAT_MODEL` | `claude-opus-5-5` | Model id for all generation. |
 | `TREECHAT_EFFORT` | `high` | Effort level for replies. |
-| `TREECHAT_PROVIDER` | `anthropic` | `fake` gives deterministic offline replies (Req 17.4). The tests always use `fake`. |
+| `TREECHAT_PROVIDER` | `anthropic` | `fake` gives deterministic offline replies (Req 8.4). The tests always use `fake`. |
 
 ## Hosting
 
