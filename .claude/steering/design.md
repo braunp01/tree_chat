@@ -1,6 +1,6 @@
 # Design Document
 
-> **Status: draft v2, 12 Oct 2026.** Replaces the v1 design. The model is now a plain tree of immutable
+> **Status: v2, implemented 12 Oct 2026 (branch `message-tree`).** Replaces the v1 design. The model is now a plain tree of immutable
 > Messages; v1's Branch records, framing, Notes, Status and merging are gone. v1 is in git history.
 
 ## Overview
@@ -143,7 +143,7 @@ derived Branches.
 - **Hypothesis** for Properties 1–7, including a stateful machine whose rules are: create a Tree, create a Tree with its Root, send from a random point (any assistant Message), request a Reply with a random Fake outcome (ok, fail, refuse, truncate, fallback, too large), and send from an invalid point. Every new rule test is shown to fail when the rule is broken on purpose.
 - **Integration tests** with FastAPI's client on a temporary Store: send, reply, SSE, `busy`, disconnect then `live`, validation field names, triggers rejecting UPDATE/DELETE and bad shapes.
 - **Front end**: Vitest and fast-check for the graph properties, the Path view, the composer and navigation.
-- **Manual**: readability and frame rate with a seeded 500-Branch Tree on the Fake provider (Req 6.11).
+- **Manual**: readability and frame rate with a seeded 500-Branch Tree on the Fake provider (Req 6.11), from `scripts/seed_synthetic.py`.
 
 ## Open questions
 

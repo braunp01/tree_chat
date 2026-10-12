@@ -4,13 +4,13 @@ Project steering lives in `.claude/steering/` and is imported below. Edit those 
 
 @.claude/steering/tech.md
 
-**Work in progress:** the project is being restructured to the v2 model (12 Oct 2026). `HANDOVER.md` describes the v1 state and is rewritten when the v2 plan is approved.
+Where the work stands, and how to carry on: `HANDOVER.md`.
 
 ## Product
 
 Tree Chat is a local, single-user chat client that looks like an ordinary chat, except that a conversation is a tree of Messages. The only two actions are: navigate to any earlier reply, and send from there, which adds a new child. A graph of the tree sits beside the chat.
 
-Messages are never edited, regenerated or deleted. The model receives exactly the Path from the start of the Tree to the point it is replying to. What it saw for every reply is recorded exactly (the Context_Manifest) and must be reproducible byte for byte.
+Messages are never edited, regenerated or deleted. Each Tree has one Root, the first message typed, and all Trees together are a forest. The model receives exactly the Path from the Root to the point it is replying to. What it saw for every reply is recorded exactly (the Context_Manifest) and must be reproducible byte for byte.
 
 Deliberately absent (v2, 12 Oct 2026): multiple users, sign-in, sync, mobile layout, editing, regenerating, deletion, passage tangents, parking, closing and merging. The app binds to 127.0.0.1 only.
 
@@ -37,8 +37,6 @@ Requirements and technical design are imported below.
 
 ## Structure
 
-Planned; created when the project is scaffolded.
-
 ```
 treechat/            Python package (the Backend_API)
   domain/            pure logic: tree rules, Paths and derived Branches, context assembly, rendering. No I/O, no clock, no ids.
@@ -48,7 +46,8 @@ treechat/            Python package (the Backend_API)
   provider/          Anthropic and Fake adapters; the only place credentials are read.
   api/               FastAPI routes and SSE framing. No business rules.
 tests/               pytest + Hypothesis; synthetic data only. Live provider tests marked `live`.
-web/                 Preact + TypeScript front end (Vite). Limits here are conveniences only.
+scripts/             seed_synthetic.py: a 500-Branch Tree for the manual speed check (Req 6.11). No AI credits.
+web/                 Preact + TypeScript front end (Vite): src/graph/ (pure visibility and layout), src/components/, src/state.ts. Limits here are conveniences only.
 data/                local Store file. Git-ignored; never committed.
 .claude/steering/    tech, requirements and design: the source of truth.
 ```

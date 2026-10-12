@@ -6,7 +6,7 @@ nothing about behaviour (that is requirements.md) or reasons (that is design.md)
 Update it in the same change that adds a dependency, a command or a setting.
 -->
 
-> **Status: approved by the owner, 11 Oct 2026.** Nothing is installed yet. Exact versions are pinned when the project is scaffolded.
+> **Status: approved by the owner, 11 Oct 2026.** Versions are pinned in `pyproject.toml`/`uv.lock` and `web/package.json`/`web/package-lock.json`.
 
 ## Language & Runtime
 
@@ -50,6 +50,8 @@ uv run treechat
 - `uv run pytest -m live` is the optional live check: at most 5 short requests, a few cents. **Run it only when the owner says so.**
 - `uv run treechat` serves the API and the built front end on http://127.0.0.1:8765.
 - For front-end development, run `npm run dev` in `web/`. It runs the Vite dev server with `/api` proxied to the back end.
+- `uv run python scripts/seed_synthetic.py data/seed.sqlite3` writes a synthetic 500-Branch, 10,000-Message Tree to a Store of its own; serve it with `TREECHAT_DB` pointing there and `TREECHAT_PROVIDER=fake` for the manual speed check (Req 6.11).
+- On Windows, set variables with `$env:NAME="value"` in PowerShell or `set NAME=value` in cmd; the `NAME=value command` form above is for bash.
 
 ## Settings and environment variables
 
@@ -84,5 +86,5 @@ Lessons from the version this came from; keep the ones that apply:
 - Report the URL, whether it loaded, and anything wrong; do not run tests or change code unless asked.
 -->
 
-1. `preview_start` with the `treechat` entry in `.claude/launch.json`. It runs `uv run treechat --reload` on port 8765 and waits for `GET /api/health` to answer within 2 seconds. (The entry and the health endpoint are created when the project is scaffolded.)
+1. `preview_start` with the `treechat` entry in `.claude/launch.json`. It runs `uv run treechat --reload` on port 8765 and waits for `GET /api/health` to answer within 2 seconds. 
 2. Open http://127.0.0.1:8765, take a small screenshot and read console errors.
