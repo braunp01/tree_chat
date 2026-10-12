@@ -56,11 +56,10 @@ uv run treechat
 | Variable | Default | Effect |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | unset | **Secret.** Provider credential. Lives in the user's environment or the `ant auth login` profile, never in the repository or the Store. Without it, the app starts but replies fail with `provider_unavailable`. |
-| `TREECHAT_DB` | `data/tree_chat.sqlite3` | Path to the Store. `data/` is git-ignored. |
+| `TREECHAT_DB` | `data/tree_chat_v2.sqlite3` | Path to the Store. `data/` is git-ignored. |
 | `TREECHAT_PORT` | `8765` | Port on 127.0.0.1. |
 | `TREECHAT_MODEL` | `claude-opus-5-5` | Model id for all generation. |
 | `TREECHAT_EFFORT` | `high` | Effort level for replies. |
-| `TREECHAT_NUDGE_AFTER` | `8` | Replies in a Tangent before the close/park nudge; `0` turns it off (Req 15.2). |
 | `TREECHAT_PROVIDER` | `anthropic` | `fake` gives deterministic offline replies (Req 17.4). The tests always use `fake`. |
 
 ## Hosting
