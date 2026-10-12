@@ -122,13 +122,23 @@ async def test_unavailable_provider_raises_the_unavailable_category() -> None:  
         await collect(p, req(user()))
     assert e.value.category is ErrorCategory.PROVIDER_UNAVAILABLE
     with pytest.raises(ProviderError):
-        await p.complete("s", "p", 100)
+        await p.summarize("s", "p")
+    assert p.has_credentials() is False
 
 
-async def test_complete_is_deterministic() -> None:
+async def test_summaries_are_deterministic_and_scriptable() -> None:  # Req 9.9, 9.5
     p = FakeProvider()
-    assert await p.complete("sys", "prompt", 50) == await p.complete("sys", "prompt", 50)
-    assert len(p.completions) == 2
+    prompt = '<conversation>\n<newest role="user">\nWhat about ETag revalidation in caches?\n</newest>\n</conversation>'
+    assert (
+        await p.summarize("sys", prompt) == await p.summarize("sys", prompt) == "About What about ETag revalidation in."
+    )
+    assert len(p.summaries) == 2
+    p.then_summary("fail", "refuse", "empty")
+    for category in (ErrorCategory.PROVIDER_ERROR, ErrorCategory.REFUSED):
+        with pytest.raises(ProviderError) as e:
+            await p.summarize("sys", prompt)
+        assert e.value.category is category
+    assert (await p.summarize("sys", prompt)).strip(' ".') == ""
 
 
 def test_thinking_from_another_model_is_not_replayed() -> None:  # design.md, Thinking replay

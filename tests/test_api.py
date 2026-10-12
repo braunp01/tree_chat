@@ -12,7 +12,11 @@ import pytest
 
 from treechat.api.app import create_app
 from treechat.api.state import State
+from treechat.jobs.summaries import SummaryJobs
 from treechat.provider.fake import FakeProvider
+from treechat.services import messages
+from treechat.store import repo
+from treechat.store.db import Store
 
 
 def events(text: str) -> list[dict[str, Any]]:
@@ -77,7 +81,7 @@ async def test_the_whole_flow_with_a_fork(api: Api) -> None:  # Req 1.1, 2.2, 3.
         (u2, root, [u2, a2]),
         (u3, root, [u3, a3]),
     ]
-    assert t["branches"][2]["label"] == "Go back: what about TTLs?" and t["branches"][2]["forked_from"] == a1
+    assert t["branches"][2]["question"] == "Go back: what about TTLs?" and t["branches"][2]["forked_from"] == a1
 
     path = (await api.c.get(f"/api/messages/{a3}/path")).json()
     assert [m["id"] for m in path["messages"]] == [root, a1, u3, a3]  # Req 2.1: the other branch is not on it
@@ -212,3 +216,127 @@ async def test_there_is_no_way_to_edit_or_delete(api: Api) -> None:  # Req 5.2
         ("PUT", f"/api/messages/{root}"),
     ]:
         assert (await api.c.request(method, path)).status_code in (404, 405)
+
+
+# --- Branch summaries (Req 9) -----------------------------------------------------------------------
+
+
+async def shape(api: Api, tree: str) -> dict[str, dict[str, Any]]:
+    r = await api.c.get(f"/api/trees/{tree}")
+    assert r.status_code == 200, r.text
+    return {b["id"]: b for b in r.json()["branches"]}
+
+
+def stored(api: Api, tree: str) -> dict[str, repo.SummaryRow]:
+    with api.state.ctx.store.read() as c:
+        return repo.summaries_for_tree(c, tree)
+
+
+async def test_a_new_tree_is_named_in_the_background(api: Api) -> None:  # Req 9.1, 9.4, 6.2
+    gate = asyncio.Event()
+    api.provider.summary_gate = gate
+    try:
+        tree, root = await api.new_tree("How does prefix caching work?")
+        b = (await shape(api, tree))[root]
+        assert (b["label"], b["summary"], b["summary_pending"]) == ("How does prefix caching work?", None, True)
+    finally:
+        gate.set()
+    await api.state.registry.drain()
+    b = (await shape(api, tree))[root]
+    assert b["summary"] == b["label"] == "About How does prefix caching work"
+    assert b["summary_pending"] is False and b["question"] == "How does prefix caching work?"
+    row = stored(api, tree)[root]
+    assert row.source == (root,) and row.model == api.provider.summary_model and row.prompt_version == 1
+
+
+async def test_a_fork_names_the_new_branch_and_the_older_one_from_its_latest_five(api: Api) -> None:  # Req 9.1-9.3
+    tree, root = await api.new_tree("q0")
+    a = (await api.reply(root))["message"]["id"]
+    thread = [root, a]
+    for i in range(1, 4):
+        thread += list(await api.turn(tree, thread[-1], f"thread question {i}"))
+    await api.state.registry.drain()
+    assert set(stored(api, tree)) == {root}  # one straight thread: one Branch, one name
+
+    new = await api.send(tree, a, "a different question")  # a Fork at `a`: two Branches come into being
+    await api.state.registry.drain()
+    rows = stored(api, tree)
+    assert set(rows) == {root, thread[2], new}
+    assert rows[new].source == (root, a, new)  # its first question and what led there
+    assert rows[thread[2]].source == tuple(thread[-5:])  # the split-off continuation: its latest five
+    assert rows[root].source == (root,)  # named once, when the Tree was made; never rewritten (Req 9.3)
+    names = await shape(api, tree)
+    assert names[new]["label"] == "About a different question"
+
+
+@pytest.mark.parametrize("outcome", ["fail", "refuse", "empty"])
+async def test_a_failed_summary_keeps_the_question_and_shows_no_error(api: Api, outcome: str) -> None:  # Req 9.5-9.6
+    api.provider.then_summary(outcome)
+    tree, root = await api.new_tree("Why is the sky blue?")
+    await api.state.registry.drain()
+    b = (await shape(api, tree))[root]
+    assert (b["label"], b["summary"], b["summary_pending"]) == ("Why is the sky blue?", None, False)
+    asked = len(api.provider.summaries)
+    await shape(api, tree)  # opening it again in the same run does not ask again
+    await api.state.registry.drain()
+    assert len(api.provider.summaries) == asked == 1 and stored(api, tree) == {}
+
+
+async def test_no_credentials_means_no_summary_requests(api: Api) -> None:  # Req 9.8
+    api.provider.available = False
+    tree, root = await api.new_tree("Offline question")
+    await shape(api, tree)
+    await api.state.registry.drain()
+    assert api.provider.summaries == [] and (await shape(api, tree))[root]["label"] == "Offline question"
+
+
+async def test_older_trees_are_named_when_opened_once_per_run(api: Api) -> None:  # Req 9.6, owner's answer D
+    api.provider.available = False  # as if made before this feature: no names yet
+    tree, root = await api.new_tree("An old conversation")
+    api.provider.available = True
+    first = await shape(api, tree)
+    assert first[root]["summary_pending"] is True
+    await api.state.registry.drain()
+    assert (await shape(api, tree))[root]["label"] == "About An old conversation"
+    await api.state.registry.drain()
+    assert len(api.provider.summaries) == 1
+
+
+async def test_summaries_never_reach_a_reply_context(api: Api) -> None:  # Property 10, Req 9.7
+    gate = asyncio.Event()
+    api.provider.summary_gate = gate
+    try:
+        tree, root = await api.new_tree("Context check")
+        before = messages.prepare_reply(api.state.ctx, root).request
+    finally:
+        gate.set()
+    await api.state.registry.drain()
+    assert stored(api, tree)  # a name now exists
+    after = messages.prepare_reply(api.state.ctx, root).request
+    assert json.dumps(before, sort_keys=True) == json.dumps(after, sort_keys=True)
+    assert "About Context check" not in json.dumps(after)
+
+
+async def test_naming_many_branches_reads_the_tree_once(api: Api, monkeypatch: pytest.MonkeyPatch) -> None:  # Req 6.11
+    api.provider.then_summary(*["fail"] * 7)  # build seven Branches with no names yet
+    tree, root = await api.new_tree("Many branches")
+    a = (await api.reply(root))["message"]["id"]
+    for i in range(6):
+        await api.turn(tree, a, f"sibling {i}")
+    await api.state.registry.drain()
+    assert stored(api, tree) == {}
+    jobs = SummaryJobs(api.state.ctx, api.provider, api.state.registry)  # a new run of the server
+    reads = 0
+    real = Store.read
+
+    def counting(self: Store):  # noqa: ANN202
+        nonlocal reads
+        reads += 1
+        return real(self)
+
+    monkeypatch.setattr(Store, "read", counting)
+    jobs.ensure(tree)
+    await api.state.registry.drain()
+    monkeypatch.undo()
+    assert len(stored(api, tree)) == 7  # the Root's Branch and six siblings
+    assert reads == 1  # one read for all seven requests, not one per Branch

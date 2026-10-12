@@ -47,7 +47,7 @@ uv run treechat
 ```
 
 - `uv run pytest` makes **no** model calls (Fake provider; real provider connections are blocked).
-- `uv run pytest -m live` is the optional live check: at most 5 short requests, a few cents. **Run it only when the owner says so.**
+- `uv run pytest -m live` is the optional live check: at most 6 short requests (one is a Haiku 5.5 Branch_Summary), a few cents. **Run it only when the owner says so.**
 - `uv run treechat` serves the API and the built front end on http://127.0.0.1:8765.
 - For front-end development, run `npm run dev` in `web/`. It runs the Vite dev server with `/api` proxied to the back end.
 - `uv run python scripts/seed_synthetic.py data/seed.sqlite3` writes a synthetic 500-Branch, 10,000-Message Tree to a Store of its own; serve it with `TREECHAT_DB` pointing there and `TREECHAT_PROVIDER=fake` for the manual speed check (Req 6.11).
@@ -62,6 +62,7 @@ uv run treechat
 | `TREECHAT_PORT` | `8765` | Port on 127.0.0.1. |
 | `TREECHAT_MODEL` | `claude-opus-5-5` | Model id for all generation. |
 | `TREECHAT_EFFORT` | `high` | Effort level for replies. |
+| `TREECHAT_SUMMARY_MODEL` | `claude-haiku-5-5` | Model id for Branch_Summaries (Req 9), run at effort `low`. One short request per new Branch. |
 | `TREECHAT_PROVIDER` | `anthropic` | `fake` gives deterministic offline replies (Req 8.4). The tests always use `fake`. |
 
 ## Hosting

@@ -1,4 +1,4 @@
-"""Test-wide guards. Req 17.5: the default suite must never reach a real LLM provider."""
+"""Test-wide guards. Req 8.5: the default suite must never reach a real LLM provider."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ def _block_network(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPat
     def guarded(self: socket.socket, address: object) -> None:
         host = address[0] if isinstance(address, tuple) else address
         if host not in _LOOPBACK:
-            raise RuntimeError(f"Network access blocked in tests (Req 17.5): {address!r}")
+            raise RuntimeError(f"Network access blocked in tests (Req 8.5): {address!r}")
         real_connect(self, address)  # type: ignore[arg-type]
 
     monkeypatch.setattr(socket.socket, "connect", guarded)

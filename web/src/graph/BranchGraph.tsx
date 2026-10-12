@@ -281,6 +281,7 @@ export function BranchGraph(): JSX.Element | null {
         {tipNode?.branch && tipPos && (
           <div class="graph-tip" role="tooltip" style={{ left: `${cam.x + (tipPos.x + NODE_W) * cam.k + 8}px`, top: `${cam.y + tipPos.y * cam.k}px` }}>
             <strong>{tipNode.branch.label}</strong>
+            {tipNode.branch.summary && <div class="muted">“{tipNode.branch.question}”</div>}
             {/* Req 6.8: the Message it forked from */}
             {tipNode.branch.forked_from_preview ? (
               <>

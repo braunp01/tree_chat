@@ -20,6 +20,7 @@ from treechat.domain.errors import DomainError
 from treechat.domain.model import Settings
 from treechat.env import system_env
 from treechat.jobs.registry import JobRegistry
+from treechat.jobs.summaries import SummaryJobs
 from treechat.provider import make_provider
 from treechat.provider.base import ProviderError
 from treechat.services.ctx import Ctx
@@ -32,7 +33,8 @@ def create_app(config: Config | None = None) -> FastAPI:
     cfg = config or load_config()
     registry = JobRegistry()
     ctx = Ctx(Store(cfg.db_path), system_env(), Settings(cfg.model, cfg.effort), registry.is_busy)
-    state = State(cfg, ctx, registry, make_provider(cfg))
+    provider = make_provider(cfg)
+    state = State(cfg, ctx, registry, provider, SummaryJobs(ctx, provider, registry))
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:

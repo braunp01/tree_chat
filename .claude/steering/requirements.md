@@ -47,6 +47,12 @@ results back into an ancestor, and any context other than the path.
 - **Branch**: a run of Messages drawn as one node of the Branch_Graph. It starts at the Root or at a child of a
   Fork and continues down through single children until a Fork or a Leaf.
   Branches are derived from the Messages; they are not stored.
+- **Branch_Summary**: a five-to-six-word name for a Branch, written by the model when the Branch comes into
+  being and shown on its node (Req 9). Stored with the Branch's first Message; never changed.
+- **Summary_Source**: the Messages a Branch_Summary is written from: the last five Messages of the Path to the
+  Branch's last Message at the moment the summary is requested, or fewer when the Path is shorter. For a new
+  Branch that is its first question and what led to it; for an older continuation that has just become a Branch,
+  its latest five Messages (owner, 12 Oct 2026).
 - **Context**: everything sent to the model for one Reply.
 - **Context_Manifest**: the exact, ordered record of a Context (Message ids, model and generation
   settings), stored with every assistant Message.
@@ -133,13 +139,13 @@ know where I am and can jump to any branch in one click.
 #### Acceptance Criteria
 
 1. THE Front_End SHALL show the Branch_Graph of the current Tree beside the chat at all times: one node per Branch, an edge from each Branch to the Branches that fork from its end, the Root's Branch at the left and depth increasing to the right.
-2. THE Front_End SHALL label each node with the start of its first user Message and its Message count, and SHALL highlight the Branch holding the Current_Point and the edges on the Path to it.
+2. THE Front_End SHALL label each node with its Branch_Summary (Req 9), or the start of its first user Message until that exists, and its Message count, and SHALL highlight the Branch holding the Current_Point and the edges on the Path to it.
 3. THE Branch_Graph SHALL always draw: the Branches on the Path to the Current_Point, their sibling Branches, and the Branches that fork from the current one. Below any other Branch, its descendants are hidden in one collapsed node that says how many Branches it holds.
 4. WHEN the user activates a collapsed node, or the toggle on a node, THE Branch_Graph SHALL expand or collapse it. THE Front_End SHALL keep that choice while the user stays in the Tree. What Req 6.3 requires cannot be collapsed.
 5. WHEN the user activates a node, THE Front_End SHALL make the last Message of that Branch the Current_Point (Req 2.3). If that is a question still waiting for its Reply, the chat shows it with the control to request the Reply (Req 3.10) and the composer stays off until it is answered.
 6. THE Branch_Graph SHALL order sibling Branches by creation time, so adding a Branch never reorders existing ones.
 7. WHEN the Current_Point changes, THE Branch_Graph SHALL scroll so that its node is in view.
-8. WHEN the user hovers or focuses a node, THE Front_End SHALL show its full label and the Message it forked from.
+8. WHEN the user hovers or focuses a node, THE Front_End SHALL show its full label, the start of its first user Message, and the Message it forked from.
 9. THE Branch_Graph SHALL pan (drag, or Shift and the arrow keys), zoom (wheel, pinch, `+`, `-`) and fit (a button, or `0`). WHEN the user presses `M`, THE Front_End SHALL enlarge it to fill the window and restore it on `M` or Escape; activating a node in the enlarged graph navigates and restores it.
 10. THE Branch_Graph SHALL be operable from the keyboard (up and down between siblings, left to the parent, right to the first child, Enter to open, space to expand or collapse) and SHALL tell assistive technology each node's label, depth and place among its siblings.
 11. THE Front_End SHALL stay responsive with 500 Branches and 10,000 Messages in one Tree: opening a Tree or moving the Current_Point completes within one second, and the graph pans and zooms at 30 frames per second or better on the owner's machine.
@@ -150,7 +156,7 @@ know where I am and can jump to any branch in one click.
 
 #### Acceptance Criteria
 
-1. THE Store SHALL keep all Trees, Messages and Context_Manifests in one local database file.
+1. THE Store SHALL keep all Trees, Messages, Context_Manifests and Branch_Summaries in one local database file.
 2. WHEN the Backend_API starts with a Store created by an earlier version of this design, it SHALL bring it up to date without losing data. This is safe to run on every start.
 3. IF any write in an operation fails, THEN THE Store SHALL keep none of that operation's writes.
 
@@ -166,3 +172,20 @@ project.
 3. IF no credentials are available, THEN THE Backend_API SHALL still start and serve existing Trees, and reply requests SHALL fail with a `provider_unavailable` error that says how to configure credentials.
 4. WHERE the fake provider is configured, THE Backend_API SHALL produce deterministic replies without contacting any external service.
 5. THE default test suite SHALL make no calls to a real LLM provider and SHALL fail any test that attempts one. Tests that call a real provider SHALL be opt-in, run only with the owner's go-ahead, and cost no more than a few cents per run.
+
+### Requirement 9: Branch summaries
+
+**User Story:** As the user, I want each node of the Branch_Graph named by a short summary of that line of
+conversation, so that I can find a branch at a glance.
+
+#### Acceptance Criteria
+
+1. WHEN a Branch comes into being, THE Backend_API SHALL request its Branch_Summary from the model in the background, without delaying the send or the Reply. A Branch comes into being when a Tree is created (the Root's Branch), and when a send gives an assistant Message a second or later child: the new Message starts a Branch and, the first time, so does the parent's earlier child.
+2. THE Backend_API SHALL write the summary request from the Summary_Source, oldest first, and SHALL ask for a description of five to six words, weighted towards the most recent Message (owner, 12 Oct 2026).
+3. WHEN a Branch_Summary arrives, THE Store SHALL persist it with the Branch's first Message, together with the model and the ids of the Summary_Source. A persisted Branch_Summary SHALL never change or be deleted.
+4. THE Front_End SHALL show a Branch_Summary on its node within a few seconds of it being persisted, without a reload, while the user stays in the Tree.
+5. IF a summary request fails or is refused, or its text is empty once cleaned, THEN THE Backend_API SHALL persist nothing, keep the fallback label (Req 6.2) and show no error.
+6. WHEN a Tree is opened that has Branches without a Branch_Summary (made before this feature, or whose request failed), THE Backend_API SHALL request them in the background, at most once per Branch each time the Backend_API runs (owner, 12 Oct 2026: older Trees are summarised when opened).
+7. THE Backend_API SHALL never put a Branch_Summary into the Context of a Reply (Req 4.1).
+8. IF no credentials are available, THEN THE Backend_API SHALL make no summary requests and keep the fallback labels (Req 8.3).
+9. WHERE the fake provider is configured, THE Backend_API SHALL write deterministic summaries without contacting any external service (Req 8.4).

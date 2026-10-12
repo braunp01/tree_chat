@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 
 from treechat.config import Config
 from treechat.jobs.registry import JobRegistry
+from treechat.jobs.summaries import SummaryJobs
 from treechat.provider.base import Provider
 from treechat.services.ctx import Ctx
 
@@ -33,6 +34,7 @@ class State:
     ctx: Ctx
     registry: JobRegistry
     provider: Provider
+    summaries: SummaryJobs
 
 
 def error_body(category: str, message: str, fields: tuple[str, ...] = ()) -> JSONResponse:

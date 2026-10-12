@@ -1,10 +1,11 @@
 """OPTIONAL live check against the real API. It costs real money (a few cents), so it is never part of the default run
 and is run only when the owner says so: `uv run pytest -m live` (Req 8.5, design.md Testing Strategy).
 
-At most FIVE short requests in total:
+At most SIX short requests in total:
   1-2. two sibling-style requests sharing a long prefix -> the second must read the prefix from the cache;
   3-5. a three-reply path, sent with thinking-binding enforcement on, so any change to an earlier request prefix
-       (Property 5) would be rejected by the real API.
+       (Property 5) would be rejected by the real API;
+  6.   one Branch_Summary on Claude Haiku 5.5 (Req 9), a fraction of a cent.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import Any
 
 import pytest
 
-from treechat.domain import context, render
+from treechat.domain import context, render, summaries
 from treechat.domain.model import Message, Role, Settings, TreeSnapshot
 from treechat.provider.anthropic_provider import AnthropicProvider, has_credentials
 
@@ -100,3 +101,15 @@ async def test_a_deep_path_replays_signed_thinking_under_enforcement() -> None:
             msgs.append(user(f"u{depth + 1}", "L", aid, "Now name one animal in a single word.", f"t{depth}b"))
     assert len(reqs) == 3
     assert reqs[-1]["messages"][1]["role"] == "assistant"  # the earlier reply was replayed to the model
+
+
+async def test_a_branch_summary_from_haiku_fits_a_node() -> None:  # Req 9.2, 9.5 (request 6)
+    p = AnthropicProvider(MODEL, "low", summary_model=os.environ.get("TREECHAT_SUMMARY_MODEL", "claude-haiku-5-5"))
+    msgs = [
+        user("u1", "L", None, "How do HTTP caches decide whether a stored response is still fresh?", "t1"),
+        reply("a1", "L", "u1", "They compare its age with max-age or Expires.", "t2", MODEL),
+        user("u2", "L", "a1", "And what does the Vary header change about that?", "t3"),
+    ]
+    system, prompt = summaries.summary_prompt(msgs)
+    name = summaries.clean_summary(await p.summarize(system, prompt))
+    assert name is not None and 1 <= len(name.split()) <= 8 and len(name) <= 60

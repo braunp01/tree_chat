@@ -1,4 +1,4 @@
-"""Req 17.5: prove the network guard works, so no test can spend AI credits by accident."""
+"""Req 8.5: prove the network guard works, so no test can spend AI credits by accident."""
 
 import socket
 
@@ -8,7 +8,7 @@ import pytest
 def test_non_loopback_connection_is_refused() -> None:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        with pytest.raises(RuntimeError, match="Req 17.5"):
+        with pytest.raises(RuntimeError, match="Req 8.5"):
             s.connect(("203.0.113.1", 443))
     finally:
         s.close()

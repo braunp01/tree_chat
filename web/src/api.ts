@@ -38,7 +38,13 @@ export interface BranchOut {
   id: string;
   parent_branch_id: string | null;
   message_ids: string[];
+  /** Req 6.2, 9.4: the Branch_Summary, or the start of its first question until that exists. */
   label: string;
+  summary: string | null;
+  /** Req 9.4: a summary is being written now; the Tree shape is fetched again until it arrives. */
+  summary_pending: boolean;
+  /** Req 6.8: the start of the Branch's first question. */
+  question: string;
   forked_from: string | null;
   forked_from_preview: string | null;
   created_at: string;

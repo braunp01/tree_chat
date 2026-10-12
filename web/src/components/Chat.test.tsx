@@ -22,6 +22,7 @@ beforeEach(() => {
   location.hash = "";
   vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
     calls.push({ method: init?.method ?? "GET", url, body: init?.body ? JSON.parse(init.body as string) : undefined });
+    if (url.endsWith("/path")) return new Response(JSON.stringify(pathOf([msg("u1", "user"), msg("a1", "assistant")])), { status: 200 });
     return new Response(JSON.stringify(msg("new", "user")), { status: 201 });
   });
 });

@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from treechat.store import repo
-from treechat.store.db import IncompatibleStore, Store, connect, latest_version, migrate
+from treechat.store.db import IncompatibleStore, Store, _scripts, _statements, connect, latest_version, migrate
 
 from .helpers import manifest_json, reply, user
 
@@ -22,6 +22,15 @@ def store(tmp_path: Path) -> Store:
         repo.insert_message(c, user("u1", "T", None))
         repo.insert_message(c, reply("a1", "T", "u1"), manifest_json("u1"))
     return s
+
+
+def migrate_to(conn: sqlite3.Connection, version: int) -> None:
+    """Build the schema of an earlier version, as a Store made by that version would have it."""
+    for v, script in _scripts():
+        if v <= version:
+            for stmt in _statements(script):
+                conn.execute(stmt)
+    conn.execute(f"PRAGMA user_version = {version}")
 
 
 def fails(store: Store, sql: str, *args: object) -> None:
@@ -122,3 +131,53 @@ def test_trees_are_listed_most_recently_active_first(store: Store) -> None:  # R
     with store.transaction() as c:
         repo.touch_tree(c, "U", "t9")
         assert [t.id for t in repo.list_trees(c)] == ["U", "T"]
+
+
+# --- Branch_Summaries (Req 9.3) ---------------------------------------------------------------------
+
+
+def _summary(mid: str, text: str = "Caching basics for HTTP") -> repo.SummaryRow:
+    return repo.SummaryRow(mid, text, "fake-haiku", (mid,), 1, "t5")
+
+
+def test_a_summary_round_trips_and_the_first_one_wins(store: Store) -> None:  # Req 9.3
+    with store.transaction() as c:
+        assert repo.insert_summary(c, _summary("u1")) is True
+        assert repo.insert_summary(c, _summary("u1", "A different name")) is False
+    with store.read() as c:
+        assert repo.summaries_for_tree(c, "T") == {"u1": _summary("u1")}
+        assert repo.summaries_for_tree(c, "U") == {}
+
+
+def test_a_summary_is_never_changed_or_deleted(store: Store) -> None:  # Req 9.3
+    with store.transaction() as c:
+        repo.insert_summary(c, _summary("u1"))
+    fails(store, "UPDATE branch_summaries SET summary = 'x'")
+    fails(store, "DELETE FROM branch_summaries")
+
+
+@pytest.mark.parametrize("text", ["", "x" * 61])
+def test_a_summary_has_one_to_sixty_characters(store: Store, text: str) -> None:  # Req 9.2
+    with pytest.raises(sqlite3.DatabaseError):
+        with store.transaction() as c:
+            repo.insert_summary(c, _summary("u1", text))
+
+
+def test_only_a_user_message_can_be_named(store: Store) -> None:  # a Branch starts at a user Message
+    with pytest.raises(sqlite3.DatabaseError):
+        with store.transaction() as c:
+            repo.insert_summary(c, _summary("a1"))
+    with pytest.raises(sqlite3.DatabaseError):
+        with store.transaction() as c:
+            repo.insert_summary(c, _summary("missing"))
+
+
+def test_a_store_from_before_summaries_is_brought_up_to_date(tmp_path: Path) -> None:  # Req 7.2
+    conn = connect(tmp_path / "v1.sqlite3")
+    migrate_to(conn, 1)
+    conn.execute("INSERT INTO trees VALUES ('T', 'a tree', 't0', 't0')")
+    conn.close()
+    s = Store(tmp_path / "v1.sqlite3")
+    with s.read() as c:
+        assert [t.id for t in repo.list_trees(c)] == ["T"]
+        assert int(c.execute("PRAGMA user_version").fetchone()[0]) == latest_version() >= 2

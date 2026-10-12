@@ -32,7 +32,7 @@ All of the approved v2 plan is done on branch `message-tree`, one PR into `main`
 
 Verified at handover:
 
-- Python checks:
+- Python checks (v2 core; see Req 9 below for the current counts):
   - `uv run pytest`: 93 passed; 2 live tests deselected and never run.
   - `uv run pyright`: 0 errors.
   - `uv run ruff check`: clean.
@@ -58,6 +58,30 @@ Not verified:
 
 - **Real-API behaviour.** The live tests have never been run. Ask the owner before running `uv run pytest -m live`.
 - **How the UI feels on the owner's screen.**
+
+## Req 9: node summaries (branch `node-summaries`, after PR #4)
+
+Each graph node is named by Claude Haiku 5.5, in 5–6 words, from the last five Messages leading to the node's end,
+weighted towards the newest (owner, 12 Oct 2026). A name is written once, when the node comes into being, and is
+never changed (table `branch_summaries`, migration 002). Until it exists, the node shows its first question.
+
+- Back end:
+  - `domain/summaries.py`: source window, frozen prompt v1, cleaning.
+  - `services/summaries.py`: plan from one read, save.
+  - `jobs/summaries.py` (`SummaryJobs.ensure`):
+    - runs after create, after send and on opening a Tree;
+    - once per Branch per run, 2 at a time;
+    - nothing without credentials;
+    - each job only calls the model and saves in a worker thread.
+- Front end: polls the shape every 2 s while a name is pending (at most 60 s per Tree). The tooltip keeps the
+  first question.
+- Verified:
+  - Python 124 passed and front end 53 passed; every new rule mutation-checked.
+  - Chromium: names appear within seconds on the Fake provider.
+  - Backfilling the seeded 500-Branch Tree: opening takes 483 ms and panning runs at 60 fps.
+- Found and fixed in testing: each job re-read the whole Tree on the event loop, so opening a 500-Branch Tree hung
+  for over 30 s during the backfill. A test now counts the reads.
+- Not verified: real Haiku output. The live suite has a sixth request for it; it has not been run.
 
 ## Rules of engagement
 

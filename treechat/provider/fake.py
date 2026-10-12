@@ -1,4 +1,4 @@
-"""A deterministic offline provider. Every automated test uses it, so tests spend no AI credits (Req 17.4, 17.5).
+"""A deterministic offline provider. Every automated test uses it, so tests spend no AI credits (Req 8.4, 8.5).
 
 It also checks each request against the rules the real API enforces, so a rendering mistake fails a test here
 instead of failing a paid request later.
@@ -9,12 +9,14 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 from collections import deque
 from typing import Any, cast
 
 from treechat.provider.base import ErrorCategory, OnDelta, ProviderError, ProviderResult
 
 FAKE_MODEL_SUFFIX = "-fake"
+FAKE_SUMMARY_MODEL = "fake-summary-model"
 
 
 class RequestShapeError(AssertionError):
@@ -73,7 +75,9 @@ class FakeProvider:
     def __init__(self, chunk: int = 7) -> None:
         self.chunk = chunk
         self.requests: list[dict[str, Any]] = []
-        self.completions: list[tuple[str, str]] = []
+        self.summaries: list[tuple[str, str]] = []
+        self.summary_gate: asyncio.Event | None = None  # when set, summarize() waits for it (to test pending labels)
+        self._summary_script: deque[str] = deque()
         self.gate: asyncio.Event | None = None  # when set, generate() waits for it (to test `busy`, disconnects)
         self._script: deque[str] = deque()
         self.available = True
@@ -82,6 +86,10 @@ class FakeProvider:
     def then(self, *outcomes: str) -> None:
         """Queue outcomes for the next calls: "ok", "fail", "refuse", "truncate", "fallback", "too_large"."""
         self._script.extend(outcomes)
+
+    def then_summary(self, *outcomes: str) -> None:
+        """Queue outcomes for the next summaries: "ok", "fail", "refuse", "empty" (Req 9.5)."""
+        self._summary_script.extend(outcomes)
 
     # -- Provider -------------------------------------------------------------------------------
     async def generate(self, request: dict[str, Any], on_delta: OnDelta) -> ProviderResult:
@@ -120,12 +128,27 @@ class FakeProvider:
             usage={"input_tokens": 1, "output_tokens": len(text) // 4 + 1},
         )
 
-    async def complete(self, system: str, prompt: str, max_tokens: int) -> str:
-        self.completions.append((system, prompt))
+    @property
+    def summary_model(self) -> str:
+        return FAKE_SUMMARY_MODEL
+
+    def has_credentials(self) -> bool:
+        return self.available
+
+    async def summarize(self, system: str, prompt: str) -> str:
+        """Req 9.9: deterministic, offline. Names the part of the conversation after its newest Message."""
+        self.summaries.append((system, prompt))
         if not self.available:
             raise ProviderError(ErrorCategory.PROVIDER_UNAVAILABLE, "No credentials: set ANTHROPIC_API_KEY.")
-        if self._script and self._script[0] == "fail_complete":
-            self._script.popleft()
+        outcome = self._summary_script.popleft() if self._summary_script else "ok"
+        if self.summary_gate is not None:
+            await self.summary_gate.wait()
+        if outcome == "fail":
             raise ProviderError(ErrorCategory.PROVIDER_ERROR, "The provider failed.")
-        digest = hashlib.sha256(f"{system}\n{prompt}".encode()).hexdigest()[:8]
-        return f"Fake summary {digest}: {prompt.strip().replace(chr(10), ' ')[:60]}"
+        if outcome == "refuse":
+            raise ProviderError(ErrorCategory.REFUSED, "The request was declined by the provider.")
+        if outcome == "empty":
+            return '  "".  '
+        m = re.search(r"<newest [^>]*>\n(.*?)\n</newest>", prompt, re.S)
+        words = (m.group(1) if m else prompt).split()[:5]
+        return f"About {' '.join(words)}." if words else "About nothing much."
