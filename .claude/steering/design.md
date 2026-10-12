@@ -1,6 +1,6 @@
 # Design Document
 
-> **Status: v2, implemented 12 Oct 2026 (branch `message-tree`). Req 9 (Branch summaries) designed, not yet built.** Replaces the v1 design. The model is now a plain tree of immutable
+> **Status: v2, implemented 12 Oct 2026 (branch `message-tree`). Req 9 (Branch summaries) designed, owner's answers in; not yet built.** Replaces the v1 design. The model is now a plain tree of immutable
 > Messages; v1's Branch records, framing, Notes, Status and merging are gone. v1 is in git history.
 
 ## Overview
@@ -32,9 +32,9 @@ The core is pure logic in `treechat/domain/`:
 | Store | **SQLite, WAL, one file, triggers enforce immutability and shape. New schema in a new default file (`data/tree_chat_v2.sqlite3`).** | v1 Stores hold only fake-provider test data (live tests were never run), so there is nothing to convert. A new file avoids opening a v1 Store with the v2 schema. (Req 7) |
 | Provider | **Kept from v1: Anthropic, `claude-opus-5-5`, adaptive thinking, effort `high`, streaming, server-side fallback; the model that produced a Reply is recorded on it. The Fake provider rejects any request the real API would reject.** | Unchanged requirements; this layer is model-agnostic. (Req 8) |
 | Branch summaries: key | **A Branch_Summary is stored against the Branch's first Message, not against a Branch record.** | Branches stay derived. A Message that starts a Branch always will: Forks only gain children, so a child of a Fork stays one, and the Root never changes. The key is stable without storing Branches. (Req 9.3) |
-| Branch summaries: source | **The Summary_Source is the last five Messages of the Path to the Branch's first Message, fixed forever. Each Message is clipped to its first 4,000 characters in the request; the label needs the gist, not the whole text.** | The Path never changes (Req 5), so the input is fixed and the summary can be checked against it. The same rule covers a new sibling and an older child that becomes a Branch when its parent forks. (Req 9.1–9.2) |
-| Branch summaries: when | **One mechanism, `ensure_summaries(tree)`, runs after every send and every time a Tree's shape is served. It starts a background job for each Branch start without a summary that has not been tried in this run of the server. At most 2 summary jobs run at once.** | Covers new Branches, Branches made by a split, Trees from before this feature, and failed attempts, without a separate scheduler. The once-per-run limit and the concurrency cap stop a failing provider or a 500-Branch backfill from spending without bound. (Req 9.1, 9.5–9.6) |
-| Branch summaries: request | **Non-streamed `Provider.complete()` (kept from v1): adaptive thinking, effort `low`, server-side fallback. A frozen, versioned summary prompt (`SUMMARY_PROMPT_VERSION = 1`). The reply text is cleaned (trim, drop quotes and trailing punctuation, collapse spaces) and clipped to 8 words and 60 characters; empty means failure.** | Labels are short and not latency-critical. Low effort keeps the cost down without changing the model. Model: see Open questions. (Req 9.2, 9.5) |
+| Branch summaries: source | **One rule: the last five Messages of the Path to the Branch's last Message, read when the job runs, and recorded with the summary. Each Message is clipped to its first 4,000 characters in the request; the label needs the gist, not the whole text.** | Owner, 12 Oct 2026: a new Branch is named from its first question and what led to it, and an older continuation that has just split off from its latest five Messages. Both follow from this one rule, because a new Branch's last Message is its first. The recorded ids say exactly what each summary was written from. (Req 9.1–9.3) |
+| Branch summaries: when | **One mechanism, `ensure_summaries(tree)`, runs after every send and every time a Tree's shape is served. It starts a background job for each Branch start without a summary that has not been tried in this run of the server. At most 2 summary jobs run at once.** | Covers new Branches, Branches made by a split, Trees from before this feature, and failed attempts, without a separate scheduler. The once-per-run limit and the concurrency cap stop a failing provider or a 500-Branch backfill from spending without bound. Without credentials it starts nothing (Req 9.8). (Req 9.1, 9.5–9.6) |
+| Branch summaries: request | **Claude Haiku 5.5 (`claude-haiku-5-5`, setting `TREECHAT_SUMMARY_MODEL`), non-streamed through `Provider.complete()` (kept from v1, now taking the model): adaptive thinking, effort `low`, no server-side fallback (Haiku 5.5 has none; a refusal is a failure). A frozen, versioned summary prompt (`SUMMARY_PROMPT_VERSION = 1`). The reply text is cleaned (trim, drop quotes and trailing punctuation, collapse spaces) and clipped to 8 words and 60 characters; empty means failure.** | Owner, 12 Oct 2026: Haiku, for cost. Labels are short and not latency-critical. (Req 9.2, 9.5) |
 | Branch summaries: delivery | **The Tree shape carries `summary` (or null) and `summary_pending` per Branch. While any is pending, the Front_End refetches the shape every 2 seconds, for at most 60 seconds.** | No new stream or socket. Pending summaries are rare and short-lived, and the shape is already the graph's source. (Req 9.4) |
 | Stack | **Python 3.14, FastAPI, uvicorn, SQLite; Preact, TypeScript, signals, Vite; pytest, Hypothesis, Vitest, fast-check.** | Unchanged from v1 (see tech.md). |
 | Network exposure | **Bind `127.0.0.1` only; no authentication.** | Single user, local. Known limit: any local process can call the API. |
@@ -139,7 +139,7 @@ render(manifest, messages, system) -> ProviderRequest                      # Req
 branches(tree) -> tuple[BranchInfo, ...]                                   # Req 6: derived runs, one pass
 default_point(tree) -> MessageId | None                                    # Req 2.2
 branch_starts(tree) -> tuple[MessageId, ...]                               # Req 9.1: first Message of each Branch
-summary_source(tree, message_id) -> tuple[MessageId, ...]                  # Req 9.2: last five of the Path
+summary_source(tree, branch) -> tuple[MessageId, ...]                      # Req 9.2: last five of the Path to its end
 summary_prompt(messages) -> str                                            # Req 9.2: frozen, deterministic
 clean_summary(text) -> str | None                                          # Req 9.5: None means failure
 ```
@@ -157,7 +157,7 @@ derived Branches.
 6. **Failed operations leave no trace.** A rejected send or a failed reply leaves the Store unchanged apart from the user Message already committed. (Req 3.5, 7.3)
 7. **Branches partition the Tree.** Every Message is in exactly one derived Branch; a Branch is a chain; Branches change only by gaining Messages or splitting at a new Fork. (Req 6)
 8. **Graph** (kept from v1 Properties 17–19): every Branch is drawn or counted exactly once; the neighbourhood of the current Branch is always drawn; depth runs left to right without overlap. (Req 6.1–6.4)
-9. **Summary source.** *For any* Tree and Branch start, the Summary_Source is the last min(5, n) Messages of the Path to it, in order, and the summary prompt built from it is byte-identical every time. (Req 9.2)
+9. **Summary source.** *For any* Tree and Branch, the Summary_Source is the last min(5, n) Messages of the Path to the Branch's last Message, in order; the stored source equals it for the snapshot the job read; and the summary prompt built from it is byte-identical every time. (Req 9.2–9.3)
 10. **Summaries stay out of the Context.** Rendering any Reply's request gives the same bytes whether or not Branch_Summaries are stored. (Req 9.7, 4.1)
 11. **Every Branch is named or tried.** *For any* sequence of operations, after `ensure_summaries` each Branch start has a stored summary, a running job, or one failed attempt in this run; and no Message that does not start a Branch ever gets a summary. Stored summaries are covered by Property 1. (Req 9.1, 9.3, 9.6)
 
@@ -172,14 +172,14 @@ derived Branches.
 
 ## Open questions
 
-Branch summaries (Req 9), 12 Oct 2026. To be answered by the owner:
+Branch summaries (Req 9): answered by the owner on 12 Oct 2026.
 
-A. Which model writes summaries: the reply model (`claude-opus-5-5`) at low effort, or Claude Haiku 5.5, which is much cheaper? Configurable either way (`TREECHAT_SUMMARY_MODEL`).
-B. "Weighted towards …": the most recent Message, which for a new Branch is its own first question (as written in Req 9.2)?
-C. When a Branch first forks, its older continuation becomes a Branch of its own. Is it summarised from the five Messages leading into its first Message (as written), or from its latest five Messages at that moment?
-D. Trees made before this feature: summarise their Branches when they are opened (as written in Req 9.6), or leave them with first-question labels?
+A. Model: Claude Haiku 5.5.
+B. Weighted towards the most recent Message.
+C. An older continuation that becomes a Branch is summarised from its latest five Messages. This led to the one rule in the decisions table.
+D. Trees made before this feature are summarised when opened.
 
-Answered by the owner on 12 Oct 2026, all as recommended:
+v2 model: answered by the owner on 12 Oct 2026, all as recommended:
 
 1. Superseded the same day by the owner's forest decision: each Tree has exactly one Root, the first Message typed; a different opening question is a new Tree.
 2. Opening a Tree goes to the most recently created Reply.

@@ -50,7 +50,9 @@ results back into an ancestor, and any context other than the path.
 - **Branch_Summary**: a five-to-six-word name for a Branch, written by the model when the Branch comes into
   being and shown on its node (Req 9). Stored with the Branch's first Message; never changed.
 - **Summary_Source**: the Messages a Branch_Summary is written from: the last five Messages of the Path to the
-  Branch's first Message, or fewer when the Path is shorter.
+  Branch's last Message at the moment the summary is requested, or fewer when the Path is shorter. For a new
+  Branch that is its first question and what led to it; for an older continuation that has just become a Branch,
+  its latest five Messages (owner, 12 Oct 2026).
 - **Context**: everything sent to the model for one Reply.
 - **Context_Manifest**: the exact, ordered record of a Context (Message ids, model and generation
   settings), stored with every assistant Message.
@@ -179,11 +181,11 @@ conversation, so that I can find a branch at a glance.
 #### Acceptance Criteria
 
 1. WHEN a Branch comes into being, THE Backend_API SHALL request its Branch_Summary from the model in the background, without delaying the send or the Reply. A Branch comes into being when a Tree is created (the Root's Branch), and when a send gives an assistant Message a second or later child: the new Message starts a Branch and, the first time, so does the parent's earlier child.
-2. THE Backend_API SHALL write the summary request from the Summary_Source, oldest first, and SHALL ask for a description of five to six words, weighted towards the most recent Message.
+2. THE Backend_API SHALL write the summary request from the Summary_Source, oldest first, and SHALL ask for a description of five to six words, weighted towards the most recent Message (owner, 12 Oct 2026).
 3. WHEN a Branch_Summary arrives, THE Store SHALL persist it with the Branch's first Message, together with the model and the ids of the Summary_Source. A persisted Branch_Summary SHALL never change or be deleted.
 4. THE Front_End SHALL show a Branch_Summary on its node within a few seconds of it being persisted, without a reload, while the user stays in the Tree.
 5. IF a summary request fails or is refused, or its text is empty once cleaned, THEN THE Backend_API SHALL persist nothing, keep the fallback label (Req 6.2) and show no error.
-6. WHEN a Tree is opened that has Branches without a Branch_Summary (made before this feature, or whose request failed), THE Backend_API SHALL request them in the background, at most once per Branch each time the Backend_API runs.
+6. WHEN a Tree is opened that has Branches without a Branch_Summary (made before this feature, or whose request failed), THE Backend_API SHALL request them in the background, at most once per Branch each time the Backend_API runs (owner, 12 Oct 2026: older Trees are summarised when opened).
 7. THE Backend_API SHALL never put a Branch_Summary into the Context of a Reply (Req 4.1).
 8. IF no credentials are available, THEN THE Backend_API SHALL make no summary requests and keep the fallback labels (Req 8.3).
 9. WHERE the fake provider is configured, THE Backend_API SHALL write deterministic summaries without contacting any external service (Req 8.4).

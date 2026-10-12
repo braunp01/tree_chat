@@ -62,7 +62,7 @@ uv run treechat
 | `TREECHAT_PORT` | `8765` | Port on 127.0.0.1. |
 | `TREECHAT_MODEL` | `claude-opus-5-5` | Model id for all generation. |
 | `TREECHAT_EFFORT` | `high` | Effort level for replies. |
-| `TREECHAT_SUMMARY_MODEL` | same as `TREECHAT_MODEL` (pending the owner's answer, design.md Open question A) | Model id for Branch_Summaries (Req 9). Always run at effort `low`. |
+| `TREECHAT_SUMMARY_MODEL` | `claude-haiku-5-5` | Model id for Branch_Summaries (Req 9), run at effort `low`. One short request per new Branch. |
 | `TREECHAT_PROVIDER` | `anthropic` | `fake` gives deterministic offline replies (Req 8.4). The tests always use `fake`. |
 
 ## Hosting
