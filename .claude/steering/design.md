@@ -1,6 +1,6 @@
 # Design Document
 
-> **Status: v2, implemented 12 Oct 2026 (branch `message-tree`).** Replaces the v1 design. The model is now a plain tree of immutable
+> **Status: v2, implemented 12 Oct 2026 (branch `message-tree`). Req 9 (Branch summaries) designed, not yet built.** Replaces the v1 design. The model is now a plain tree of immutable
 > Messages; v1's Branch records, framing, Notes, Status and merging are gone. v1 is in git history.
 
 ## Overview
@@ -31,6 +31,11 @@ The core is pure logic in `treechat/domain/`:
 | Replies, jobs, streaming | **Kept from v1: one asyncio job per user Message, independent of the HTTP request; SSE stream with catch-up for late subscribers.** | Closing the tab must not lose a paid reply (Req 3.8). The registry keys change from Branch to user Message. |
 | Store | **SQLite, WAL, one file, triggers enforce immutability and shape. New schema in a new default file (`data/tree_chat_v2.sqlite3`).** | v1 Stores hold only fake-provider test data (live tests were never run), so there is nothing to convert. A new file avoids opening a v1 Store with the v2 schema. (Req 7) |
 | Provider | **Kept from v1: Anthropic, `claude-opus-5-5`, adaptive thinking, effort `high`, streaming, server-side fallback; the model that produced a Reply is recorded on it. The Fake provider rejects any request the real API would reject.** | Unchanged requirements; this layer is model-agnostic. (Req 8) |
+| Branch summaries: key | **A Branch_Summary is stored against the Branch's first Message, not against a Branch record.** | Branches stay derived. A Message that starts a Branch always will: Forks only gain children, so a child of a Fork stays one, and the Root never changes. The key is stable without storing Branches. (Req 9.3) |
+| Branch summaries: source | **The Summary_Source is the last five Messages of the Path to the Branch's first Message, fixed forever. Each Message is clipped to its first 4,000 characters in the request; the label needs the gist, not the whole text.** | The Path never changes (Req 5), so the input is fixed and the summary can be checked against it. The same rule covers a new sibling and an older child that becomes a Branch when its parent forks. (Req 9.1–9.2) |
+| Branch summaries: when | **One mechanism, `ensure_summaries(tree)`, runs after every send and every time a Tree's shape is served. It starts a background job for each Branch start without a summary that has not been tried in this run of the server. At most 2 summary jobs run at once.** | Covers new Branches, Branches made by a split, Trees from before this feature, and failed attempts, without a separate scheduler. The once-per-run limit and the concurrency cap stop a failing provider or a 500-Branch backfill from spending without bound. (Req 9.1, 9.5–9.6) |
+| Branch summaries: request | **Non-streamed `Provider.complete()` (kept from v1): adaptive thinking, effort `low`, server-side fallback. A frozen, versioned summary prompt (`SUMMARY_PROMPT_VERSION = 1`). The reply text is cleaned (trim, drop quotes and trailing punctuation, collapse spaces) and clipped to 8 words and 60 characters; empty means failure.** | Labels are short and not latency-critical. Low effort keeps the cost down without changing the model. Model: see Open questions. (Req 9.2, 9.5) |
+| Branch summaries: delivery | **The Tree shape carries `summary` (or null) and `summary_pending` per Branch. While any is pending, the Front_End refetches the shape every 2 seconds, for at most 60 seconds.** | No new stream or socket. Pending summaries are rare and short-lived, and the shape is already the graph's source. (Req 9.4) |
 | Stack | **Python 3.14, FastAPI, uvicorn, SQLite; Preact, TypeScript, signals, Vite; pytest, Hypothesis, Vitest, fast-check.** | Unchanged from v1 (see tech.md). |
 | Network exposure | **Bind `127.0.0.1` only; no authentication.** | Single user, local. Known limit: any local process can call the API. |
 
@@ -71,6 +76,7 @@ transaction per operation, `jobs/` the only provider callers, `api/` shapes only
 2. `POST /api/messages/{user_message_id}/reply`: checks the user Message has no Reply and no running job (Req 3.7), assembles the manifest from its Path (Req 4.1), renders the request, registers a job and streams SSE.
 3. On completion (or `max_tokens`) the job inserts the Reply with its content blocks, manifest, model and stop reason, then emits `done`. On failure it persists nothing and emits `error` (Req 3.5).
 4. `GET /api/messages/{user_message_id}/live` re-attaches to a running job (204 if none) (Req 3.8).
+5. After step 1, and whenever `GET /api/trees/{id}` is served, `jobs.summaries.ensure_summaries` starts summary jobs for Branch starts that have none (Req 9.1, 9.6). Each job reads the Summary_Source, calls `Provider.complete`, cleans the text and inserts the Branch_Summary in one transaction. Failures are logged without content and persist nothing (Req 9.5).
 
 ## API Contract
 
@@ -80,7 +86,7 @@ transaction per operation, `jobs/` the only provider callers, `api/` shapes only
 | `GET` | `/api/trees` | Trees, most recently active first | 1.2 |
 | `POST` | `/api/trees` | Create a Tree with its Root: `{content}` → `{tree, message}` | 1.1, 1.3 |
 | `PATCH` | `/api/trees/{id}` | Rename | 1.3–1.4 |
-| `GET` | `/api/trees/{id}` | The Tree's shape: every Message without content (id, parent, role, created_at, label = first 60 characters for user Messages), the derived Branches, and the default Current_Point | 2.2, 6 |
+| `GET` | `/api/trees/{id}` | The Tree's shape: the derived Branches and the default Current_Point. Each Branch has `label` (its Branch_Summary, else the first 60 characters of its first Message), `summary` (or null), `summary_pending`, `question` (first 60 characters of its first Message), `forked_from_preview` and `message_ids`. Serving it also starts missing summaries | 2.2, 6, 9 |
 | `GET` | `/api/messages/{id}/path` | The Path to a Message with full content; for each Message its child count; `awaiting_reply`, `reply_in_progress`, and `latest_below` (the most recent Reply below the last Message, for "jump to the latest") | 2.1, 2.4, 3.10 |
 | `POST` | `/api/trees/{id}/messages` | Send: `{parent_id, content}`; `parent_id` is an assistant Message of the Tree | 3.1–3.2, 3.9 |
 | `POST` | `/api/messages/{id}/reply` | Generate the Reply to a user Message (SSE) | 3.3–3.7 |
@@ -106,10 +112,21 @@ messages(
 )
 ```
 
+```sql
+-- migration 002 (Req 9): added, nothing changed
+branch_summaries(
+  message_id TEXT PRIMARY KEY REFERENCES messages,   -- the Branch's first Message; a user Message
+  summary TEXT CHECK (length(summary) BETWEEN 1 AND 60),
+  model TEXT, source TEXT,                            -- source: JSON array of the Summary_Source ids, in order
+  prompt_version INTEGER, created_at TEXT
+)
+```
+
 Enforced by triggers (Req 5): no UPDATE or DELETE of messages, no DELETE of trees; exactly one parentless
 Message per Tree, and it is a user Message (the Root); every other user Message's parent is an assistant
 Message of the same Tree; an assistant Message's parent is a user Message of the
-same Tree with no other assistant child; an assistant Message carries its blocks, model and manifest.
+same Tree with no other assistant child; an assistant Message carries its blocks, model and manifest; no UPDATE or DELETE of branch_summaries, and a
+summary belongs to a user Message (Req 9.3).
 Ids are UUIDv7; times are UTC ISO-8601. Each operation is one `BEGIN IMMEDIATE` transaction (Req 7.3).
 
 ## Domain logic (pure)
@@ -121,6 +138,10 @@ assemble(tree, user_message_id, settings) -> Manifest                      # Req
 render(manifest, messages, system) -> ProviderRequest                      # Req 4.2-4.3 (kept from v1)
 branches(tree) -> tuple[BranchInfo, ...]                                   # Req 6: derived runs, one pass
 default_point(tree) -> MessageId | None                                    # Req 2.2
+branch_starts(tree) -> tuple[MessageId, ...]                               # Req 9.1: first Message of each Branch
+summary_source(tree, message_id) -> tuple[MessageId, ...]                  # Req 9.2: last five of the Path
+summary_prompt(messages) -> str                                            # Req 9.2: frozen, deterministic
+clean_summary(text) -> str | None                                          # Req 9.5: None means failure
 ```
 
 Front end (pure TypeScript, `web/src/graph/`): `visibleGraph` and `layoutGraph`, kept from v1 and fed with
@@ -136,18 +157,29 @@ derived Branches.
 6. **Failed operations leave no trace.** A rejected send or a failed reply leaves the Store unchanged apart from the user Message already committed. (Req 3.5, 7.3)
 7. **Branches partition the Tree.** Every Message is in exactly one derived Branch; a Branch is a chain; Branches change only by gaining Messages or splitting at a new Fork. (Req 6)
 8. **Graph** (kept from v1 Properties 17–19): every Branch is drawn or counted exactly once; the neighbourhood of the current Branch is always drawn; depth runs left to right without overlap. (Req 6.1–6.4)
+9. **Summary source.** *For any* Tree and Branch start, the Summary_Source is the last min(5, n) Messages of the Path to it, in order, and the summary prompt built from it is byte-identical every time. (Req 9.2)
+10. **Summaries stay out of the Context.** Rendering any Reply's request gives the same bytes whether or not Branch_Summaries are stored. (Req 9.7, 4.1)
+11. **Every Branch is named or tried.** *For any* sequence of operations, after `ensure_summaries` each Branch start has a stored summary, a running job, or one failed attempt in this run; and no Message that does not start a Branch ever gets a summary. Stored summaries are covered by Property 1. (Req 9.1, 9.3, 9.6)
 
 ## Testing Strategy
 
 - **Zero AI credits by default** (Req 8.5): the Fake provider, and a fixture that blocks non-loopback connections. `pytest -m live` only with the owner's go-ahead.
 - **Hypothesis** for Properties 1–7, including a stateful machine whose rules are: create a Tree, create a Tree with its Root, send from a random point (any assistant Message), request a Reply with a random Fake outcome (ok, fail, refuse, truncate, fallback, too large), and send from an invalid point. Every new rule test is shown to fail when the rule is broken on purpose.
+- **Branch summaries**: Hypothesis for Properties 9–11. The stateful machine gains a rule "summary jobs finish" with a random Fake outcome (ok, fail, refused, empty text) and checks Property 11 and the immutability of stored summaries. API tests: the shape's `label`, `summary` and `summary_pending`; no summary requests without credentials; backfill on opening a Tree. Front end: the label switches when the summary arrives, and polling stops.
 - **Integration tests** with FastAPI's client on a temporary Store: send, reply, SSE, `busy`, disconnect then `live`, validation field names, triggers rejecting UPDATE/DELETE and bad shapes.
 - **Front end**: Vitest and fast-check for the graph properties, the Path view, the composer and navigation.
 - **Manual**: readability and frame rate with a seeded 500-Branch Tree on the Fake provider (Req 6.11), from `scripts/seed_synthetic.py`.
 
 ## Open questions
 
-None. Answered by the owner on 12 Oct 2026, all as recommended:
+Branch summaries (Req 9), 12 Oct 2026. To be answered by the owner:
+
+A. Which model writes summaries: the reply model (`claude-opus-5-5`) at low effort, or Claude Haiku 5.5, which is much cheaper? Configurable either way (`TREECHAT_SUMMARY_MODEL`).
+B. "Weighted towards …": the most recent Message, which for a new Branch is its own first question (as written in Req 9.2)?
+C. When a Branch first forks, its older continuation becomes a Branch of its own. Is it summarised from the five Messages leading into its first Message (as written), or from its latest five Messages at that moment?
+D. Trees made before this feature: summarise their Branches when they are opened (as written in Req 9.6), or leave them with first-question labels?
+
+Answered by the owner on 12 Oct 2026, all as recommended:
 
 1. Superseded the same day by the owner's forest decision: each Tree has exactly one Root, the first Message typed; a different opening question is a new Tree.
 2. Opening a Tree goes to the most recently created Reply.
