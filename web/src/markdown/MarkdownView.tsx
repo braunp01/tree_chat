@@ -1,24 +1,19 @@
-// Our own mdast renderer: every rendered text run is a <span data-s data-e data-k> that remembers
-// the source span it came from, so selections can be mapped back to source offsets (Req 4.1, 4.5).
-import type { ComponentChildren, JSX } from "preact";
+// Markdown rendering for assistant Messages (Req 2.6): parsed to mdast and rendered by our own component, so raw HTML
+// is never injected.
+import { Fragment, type ComponentChildren, type JSX } from "preact";
 import { fromMarkdown } from "mdast-util-from-markdown";
 import { gfmFromMarkdown } from "mdast-util-gfm";
 import { gfm } from "micromark-extension-gfm";
 import type { Nodes, Parents, Root, TableRow } from "mdast";
-import type { MappedKind } from "./align";
 
 export function parseMarkdown(source: string): Root {
   return fromMarkdown(source, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
 }
 
-function mapped(value: string, node: Nodes, kind: MappedKind, key?: number): JSX.Element {
-  const s = node.position?.start.offset ?? 0;
-  const e = node.position?.end.offset ?? s;
-  return (
-    <span key={key} data-s={s} data-e={e} data-k={kind}>
-      {value}
-    </span>
-  );
+type Kind = "text" | "inlineCode" | "code" | "raw";
+
+function mapped(value: string, _node: Nodes, _kind: Kind, key?: number): JSX.Element {
+  return <Fragment key={key}>{value}</Fragment>;
 }
 
 function children(node: Parents): ComponentChildren {
@@ -106,13 +101,7 @@ export function MarkdownView({ source }: { source: string }): JSX.Element {
   return <div class="md">{renderNode(parseMarkdown(source))}</div>;
 }
 
-/** User Messages are shown as typed: one mapped run over the whole text (Req 4.1). */
+/** User Messages are shown as typed (Req 2.6). */
 export function PlainView({ source }: { source: string }): JSX.Element {
-  return (
-    <div class="plain">
-      <span data-s={0} data-e={source.length} data-k="raw">
-        {source}
-      </span>
-    </div>
-  );
+  return <div class="plain">{source}</div>;
 }

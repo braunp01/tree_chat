@@ -1,7 +1,5 @@
 import { render } from "preact";
-
-function App() {
-  return <main>Tree Chat</main>;
-}
+import { App } from "./App";
+import "./styles.css";
 
 render(<App />, document.getElementById("app")!);
