@@ -47,7 +47,7 @@ Around the core:
 |---|---|---|
 | v1 boundary | **One user, local, one provider, many Trees. No sign-in, sync, mobile, multi-anchor, summary mode, pinning or deletion.** | Owner's decision, confirmed 11 Oct 2026. Deletion is added to the out-list (owner accepted, 11 Oct 2026), because immutability makes it a design question of its own (Req 16.3). |
 | Shape | **Strict tree of Branches; one Anchor per Branch; Messages immutable; no depth cap** | Owner's decision (handover). Enforced in the Store by triggers and in the domain by validation (Req 3.1, 6). |
-| Spawning | **Select text → popover with focused one-line Intent; Enter = park, Ctrl/Cmd+Enter = open; spawning never navigates unless opened** | Owner's decision (handover) (Req 4.1–4.2). |
+| Spawning *(retired 12 Oct 2026)* | **Select text → popover with focused one-line Intent; Enter = park, Ctrl/Cmd+Enter = open.** Dropped from front and back end by the owner; see "Conversation-first". | Was Req 4.1–4.2. |
 | Anchor vs Fork_Point | **Separate fields. Fork_Point defaults to the Anchor's Message; option: the parent's Tip** | Owner's decision (handover) (Req 4.8, 9). Added (owner accepted, 11 Oct 2026): the Fork_Point stays changeable until the Branch's first Message, so a Tangent parked for a week can catch up when resumed (Req 9.2, 10.6). |
 | Parent of a Tangent | **The Branch that owns the Anchor's Message, not the Branch being viewed** | A selection in the inherited part of a Path_View is about that earlier Message. Making the viewer the parent would give the new Branch knowledge (the viewer's framing and Messages) that its Fork_Point says it lacks, which contradicts the Fork_Point. (Req 4.4) |
 | Context modes | **One: every Branch inherits. *Superseding* the handover's Inherit/Clean modes and the mid-branch switch.** | Owner's decision, 11 Oct 2026. **Consequence:** a Branch's Contexts only ever grow, which makes the prompt cache and thinking replay simple (rows below). Req 7.2, 8 and 14.5 are retired. |
@@ -63,6 +63,12 @@ Around the core:
 | Reach of a Note | **A Note reaches later replies in its target, and Branches whose Fork_Point is the Note or later.** **Known limit:** with the default Fork_Point (the Anchor), a new Tangent anchored on any passage *above* the Note will not see it. | Follows from append-only merges plus Anchor-based Fork_Points. *Pushback:* the owner's "only branches forked after a merge inherit its note" understates this. Timing is not enough; the Fork_Point must be at or after the Note. The tip-fork option (Req 9) is the way to bring Notes along. See Open question 6. |
 | Conclusions | **Required for `merged` and `kept`, optional for `abandoned`. The close panel arrives pre-filled with a model draft.** | Owner accepted, 11 Oct 2026. Requiring a Conclusion is what makes closing count. Pre-filling it makes the requirement cheap, so closing stays easier than drifting. `abandoned` stays frictionless, so dead ends get closed rather than left open. (Req 12.1–12.2) |
 | Generated text | **Generated_Intent at spawn when no Intent is given, from the Anchor and its Message only. A "where it stands" line when a Branch with replies is parked. Conclusion drafts on request. None ever enters a Context.** | *Pushback on the handover:* "auto-summary when the intent was skipped" has nothing to summarise for a freshly parked Tangent, which has no Messages. So it is generated *from the Anchor* at spawn. The summary of progress is a separate thing, made at park time. (Req 11) |
+| Conversation-first | **The main view is an ordinary chat: the path from the Trunk to the Current_Point, then one composer. Branching is "go back to a point and send"; the server forks automatically when the point is not a Tip. One Send button.** | Owner's decision, 12 Oct 2026, after using the earlier UI: "way too complex … at any point I'm still looking at something very similar to a normal Claude conversation." *Superseding* passage tangents altogether (owner: "drop altogether from front and backend"), the collapsed inherited prefix and the framing card. **Kept:** the Branch_Graph as the navigator; clicking a node opens that Branch at its Tip, earlier points are chosen in the chat. **Hidden, rules kept:** Park, Queue, Close and merge. (Req 19) |
+| What a continued branch is | **An Alternative: Anchor and Fork_Point are the chosen Message; no Framing_Block. Edits and regenerations are the same thing seen from a different Message.** | With no framing, what the model receives is exactly the conversation on screen, which is what "looks like a normal conversation" has to mean for the model too. The data model, triggers and Context rules already allow it, so no migration: Req 3.5 and 7.1 cover Alternatives. Existing Tangents keep their frozen framing (Req 7.3, 7.6). |
+| Sending from a point | **One endpoint, `POST /api/messages/{id}/continue {content}`: appends when the Message is the Tip of an open or parked Branch, otherwise forks an Alternative and appends there, in one transaction.** | The client never decides "continue or branch": it always sends from its Current_Point (Req 19.5). A `closed` Branch's Tip forks rather than failing, because "closed" means that line is finished, not that the user may not carry on from it. |
+| Forks in the chat | **None: forks appear only in the Branch_Graph.** | Owner's decision, 12 Oct 2026 (a switcher was offered and declined). (Req 19.7) |
+| Branch labels | **The start of the Branch's first user Message (first 60 characters); legacy Tangents keep Intent / Generated_Intent / Anchor quote.** | With no Intent, the first thing the user asked is the most recognisable name. Computed in the read model, never stored, never sent to the model. (Req 18.2) |
+| Legacy Tangents | **Read, displayed and replied to as before; never created. The spawn and fork-point endpoints, the anchor validator for spawning and Generated_Intent at spawn are removed.** | Owner: drop passage tangents from the back end. Messages, framings and manifests are immutable and migrations only add, so existing Tangents must keep assembling exactly as they did (Req 7.3, 7.6, 16.2). |
 | Visualisation | **One screen, two parts: the Path_View for reading and the Branch_Graph (the Outline, which is also the Tree_Map when enlarged) for navigation. *Superseding* "no node-and-edge graph" and the earlier three separate views.** | Owner's requests, 11 Oct 2026: see the whole tree and where you are; then "a single unified view". The earlier objection was to a graph that draws every Message at once; collapsing answers it. The graph keeps keyboard and screen-reader operation (Req 14.6, 18.8). (Req 14, 18) |
 | One pane for graph and map | **The Branch_Graph is the Tree_Map: one pane beside the Path_View, which pans and zooms and can be enlarged to the whole window with `M`. x = depth (Trunk at the left), not Conversation_Position.** | Owner's decision, 11 Oct 2026: "a single unified view", graph and conversation side by side, "with the zoomable map too", unsure whether it is a separate screen. One component answers both: a separate map screen would be a second picture of the same Tree. *Superseding* the Tracks layout (x = Conversation_Position), because the owner asked for depth as the implicit direction. **Cost:** where a Branch leaves its parent along the conversation is no longer drawn; sibling order still uses it (Req 18.6). |
 | Level of detail | **Relevance first: the neighbourhood of the current Branch is drawn, the rest collapses (Req 18.3). Collapse by on-screen size (a subtree under 24 px tall becomes one node) and message ticks come later, in the same pane.** | Relevance gives the owner what was asked for now and is easy to test (Properties 17-18). Size-based collapse is how maps stay readable when zoomed far out, and is worth building once the owner has used the graph. (Req 14.10-14.14, later.) |
@@ -146,8 +152,7 @@ All paths are under `http://127.0.0.1:<port>`.
 | `GET` | `/api/messages/{message_id}/preview` | First 200 characters of a Message, for hovering a message tick (later) | 14.14 |
 | `GET` | `/api/trees/{tree_id}/queue?order=oldest\|newest\|parent` | Parked Branches with staleness facts | 10.2, 10.4–10.5 |
 | `GET` | `/api/branches/{branch_id}/view` | Path_View: inherited entries, framing, own Messages, markers | 5, 14.4 |
-| `POST` | `/api/branches` | Spawn a Tangent | 4, 9.1 |
-| `PATCH` | `/api/branches/{branch_id}` | Change `intent` or `fork_at` | 9.2–9.3, 11.4 |
+| `POST` | `/api/messages/{message_id}/continue` | Send from a point: append at a Tip, otherwise fork an Alternative there | 19.4–19.5 |
 | `POST` | `/api/branches/{branch_id}/messages` | Append a user Message | 2.1, 2.5, 2.7–2.8 |
 | `POST` | `/api/branches/{branch_id}/reply` | Generate a reply to the Tip (SSE) | 2.2–2.5, 7 |
 | `GET` | `/api/branches/{branch_id}/live` | Re-attach to a reply in progress (SSE; 204 if none) | 2.6 |
@@ -161,7 +166,7 @@ All paths are under `http://127.0.0.1:<port>`.
 
 #### Request and response bodies
 
-Spawn a Tangent:
+Spawn a Tangent *(retired 12 Oct 2026; kept for reference)*:
 
 ```json
 {
@@ -244,6 +249,8 @@ Context_Manifest (`GET /api/messages/{id}/manifest`):
   - `framing` is null for the Trunk, otherwise `{anchor_quote, intent, generated_intent, fork_point_message_id, text, frozen}`; `text` is null when the Branch has none of its own to send (a plain Alternative).
   - `merge_targets` are the non-closed ancestors, nearest first (Req 13.3); `open_descendants` feed the close panel (Req 12.6); `awaiting_reply` tells the close panel to offer the reply first (Req 2.9, 13.5).
 - Closing returns the Branch summary plus `note_message_id` and `abandoned_branch_ids`.
+- `POST /api/messages/{id}/continue` with `{content}` (Req 19.4-19.5): returns 201 `{branch: Branch summary, message: Message, forked: bool}`; the client then requests the reply on `branch.id`. The Message must be an assistant Message or Note (`conflict` otherwise); validation as for sending (`content`); `busy` if the Branch it would append to has a reply in progress.
+- Branch summaries add `label` (Req 18.2, "Branch labels" above) and `fork_preview` (first 120 characters of the Fork_Point Message, for the node tooltip, Req 18.9).
 - `POST /api/messages/{id}/alternatives` returns the new Alternative's summary (201). The client then requests its reply with `POST /api/branches/{id}/reply`; a regeneration has no Message until then. A Note is a `conflict`; an edit without `content` is a `validation` error on `content`.
 - `POST /api/branches/{id}/conclusion-draft` returns `{"text": "…"}`. With no credentials it returns an empty string so the close panel still works (Req 17.3); any other provider failure is the usual error.
 - Request-body errors (missing or mistyped fields) use the same error body and name the top-level field (`anchor`, `content`, `title`, `outcome`…).
@@ -467,7 +474,7 @@ validates.*
 
 **Validates: Requirements 13.1, 13.3–13.4, 13.6**
 
-### Property 10: Anchor validation is exact
+### Property 10: Anchor validation is exact *(retired 12 Oct 2026 with passage tangents)*
 
 *For any* string (including astral-plane characters and combining marks) and any offsets, an Anchor is accepted if and only if `0 ≤ start < end ≤ len` and the code-point slice equals `quoted_text`.
 
@@ -570,4 +577,8 @@ Guarantees:
 
 ## Open questions
 
-None. The owner accepted every recommendation on 11 Oct 2026, including the later UI review: the Branch_Graph shows the current neighbourhood in full and collapses the rest; Park, Resume and Reopen buttons now, with the Close panel and Queue left to step 8; anchored passages underlined; and one unified view, with the graph and the zoomable map as one pane. Earlier decisions: the v1 boundary (with no deletion), inheriting as "what the parent knew", framing placement, `open` semantics, queue ordering and staleness, the Note reach limit with its popover warning, closing and reopening rules, ancestor merge targets, the Note format, the nudge (on, after 8 replies), generated descriptions and the stack.
+Decided 12 Oct 2026 (conversation-first redesign): keep the Branch_Graph as the navigator; drop passage tangents from front and back end; hide Park, Queue, Close and merge; no fork switcher in the chat.
+
+Still open, for when closing returns: every new Branch is an Alternative, and Req 12.9 forbids merging an Alternative. Merging a Conclusion back would need that rule changed.
+
+Earlier (11 Oct 2026), all accepted, including the UI review: the Branch_Graph shows the current neighbourhood in full and collapses the rest; Park, Resume and Reopen buttons now, with the Close panel and Queue left to step 8; anchored passages underlined; and one unified view, with the graph and the zoomable map as one pane. Earlier decisions: the v1 boundary (with no deletion), inheriting as "what the parent knew", framing placement, `open` semantics, queue ordering and staleness, the Note reach limit with its popover warning, closing and reopening rules, ancestor merge targets, the Note format, the nudge (on, after 8 replies), generated descriptions and the stack.

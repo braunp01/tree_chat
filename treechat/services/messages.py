@@ -71,27 +71,62 @@ def _append(
     return m
 
 
+def _send_into(ctx: Ctx, c: sqlite3.Connection, snap: TreeSnapshot, b: Branch, text: str) -> Message:
+    """Req 2.1, 2.5, 2.8-2.9: append a user Message at the Tip of `b` inside the caller's transaction."""
+    if ctx.is_busy(b.id):
+        raise Busy("A reply is already being generated in this branch.")
+    new_status = rules.transition(b.status, Action.SEND, b.kind)  # a closed Branch refuses (Req 12.8)
+    chain = snap.chain(b.id)
+    if chain and snap.messages[chain[-1]].role is Role.USER:
+        raise Conflict("Wait for the reply to your last message, or request it again, before sending another.")
+    if not chain and b.kind is BranchKind.ALTERNATIVE and b.fork_point_message_id is not None:
+        fork = snap.messages[b.fork_point_message_id]
+        if fork.role is Role.USER:  # a regeneration: its first Message is the reply (Req 3.3)
+            raise Conflict("Request the reply for this alternative before sending another message.")
+    m = _append(ctx, c, snap, b, Role.USER, text)
+    if new_status is not b.status:
+        repo.set_status(c, b.id, new_status, m.created_at)  # Req 2.8: sending resumes a parked Branch
+    tree = repo.get_tree(c, b.tree_id)
+    if tree is not None and tree.title is None:
+        repo.set_title(c, b.tree_id, text.strip()[:60].strip())  # Req 1.3
+    return m
+
+
 def send_message(ctx: Ctx, branch_id: BranchId, content: str) -> Message:
     """Req 2.1, 2.5, 2.7-2.9."""
     text = rules.clean_content(content)
     with ctx.store.transaction() as c:
         snap = snapshot_of_branch(c, branch_id)
-        b = rules.branch(snap, branch_id)
-        if ctx.is_busy(branch_id):
-            raise Busy("A reply is already being generated in this branch.")
-        new_status = rules.transition(b.status, Action.SEND, b.kind)  # a closed Branch refuses (Req 12.8)
-        chain = snap.chain(branch_id)
-        if chain and snap.messages[chain[-1]].role is Role.USER:
-            raise Conflict("Wait for the reply to your last message, or request it again, before sending another.")
-        if not chain and b.kind is BranchKind.ALTERNATIVE:
-            raise Conflict("Request the reply for this alternative before sending another message.")
-        m = _append(ctx, c, snap, b, Role.USER, text)
-        if new_status is not b.status:
-            repo.set_status(c, branch_id, new_status, m.created_at)  # Req 2.8: sending resumes a parked Branch
-        tree = repo.get_tree(c, b.tree_id)
-        if tree is not None and tree.title is None:
-            repo.set_title(c, b.tree_id, text.strip()[:60].strip())  # Req 1.3
-        return m
+        return _send_into(ctx, c, snap, rules.branch(snap, branch_id), text)
+
+
+@dataclass(frozen=True, slots=True)
+class ContinueResult:
+    branch: Branch
+    message: Message
+    forked: bool
+
+
+def continue_from(ctx: Ctx, message_id: MessageId, content: str) -> ContinueResult:
+    """Req 19.4-19.5: send from the Current_Point. At the Tip of an open or parked Branch the Message is appended;
+    anywhere else (or at the Tip of a closed Branch) a new Alternative forks at that point and gets the Message, in the
+    same transaction. The fork has no Framing_Block, so the model sees exactly the conversation on screen."""
+    text = rules.clean_content(content)
+    with ctx.store.transaction() as c:
+        tree_id = tree_of_message(c, message_id)
+        snap = repo.load_snapshot(c, tree_id)
+        m = snap.messages[message_id]
+        if m.role is Role.USER:
+            raise Conflict("Go back to a reply to continue from there, or edit this message.")  # Req 19.9
+        owner = snap.branches[m.branch_id]
+        chain = snap.chain(owner.id)
+        if chain[-1] == m.id and owner.status is not Status.CLOSED:
+            sent = _send_into(ctx, c, snap, owner, text)
+            return ContinueResult(repo.load_snapshot(c, tree_id).branches[owner.id], sent, False)
+        alt = _new_alternative(ctx, c, m, tree_id, fork_point=m.id)
+        snap = repo.load_snapshot(c, tree_id)
+        sent = _send_into(ctx, c, snap, snap.branches[alt.id], text)
+        return ContinueResult(alt, sent, True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,8 +181,11 @@ def finish_reply(ctx: Ctx, prepared: PreparedReply, result: ProviderResult) -> M
         )
 
 
-def _new_alternative(ctx: Ctx, c: sqlite3.Connection, m: Message, tree_id: TreeId) -> Branch:
-    """Req 3.2-3.3: whole-Message Anchor, Fork_Point = the predecessor, parent = the Message's Branch."""
+def _new_alternative(
+    ctx: Ctx, c: sqlite3.Connection, m: Message, tree_id: TreeId, fork_point: MessageId | None
+) -> Branch:
+    """Req 3.2-3.3, 19.5: whole-Message Anchor, parent = the Message's Branch. The Fork_Point is the Message's
+    predecessor for an edit or regeneration, and the Message itself when continuing from it."""
     now = ctx.env.now()
     alt = Branch(
         id=ctx.env.new_id(),
@@ -155,7 +193,7 @@ def _new_alternative(ctx: Ctx, c: sqlite3.Connection, m: Message, tree_id: TreeI
         parent_branch_id=m.branch_id,
         kind=BranchKind.ALTERNATIVE,
         anchor=Anchor(m.id, 0, len(m.content), m.content),
-        fork_point_message_id=m.parent_message_id,
+        fork_point_message_id=fork_point,
         intent=None,
         status=Status.OPEN,
         framing_text=None,
@@ -176,7 +214,7 @@ def edit_message(ctx: Ctx, message_id: MessageId, content: str) -> Branch:
         m = snap.messages[message_id]
         if m.role is not Role.USER:
             raise Conflict("Only your own messages can be edited.")
-        alt = _new_alternative(ctx, c, m, tree_id)
+        alt = _new_alternative(ctx, c, m, tree_id, m.parent_message_id)
         snap = repo.load_snapshot(c, tree_id)
         _append(ctx, c, snap, snap.branches[alt.id], Role.USER, text)
         return alt
@@ -190,4 +228,4 @@ def regenerate_message(ctx: Ctx, message_id: MessageId) -> Branch:
         m = snap.messages[message_id]
         if m.role is not Role.ASSISTANT:
             raise Conflict("Only a reply can be regenerated.")
-        return _new_alternative(ctx, c, m, tree_id)
+        return _new_alternative(ctx, c, m, tree_id, m.parent_message_id)

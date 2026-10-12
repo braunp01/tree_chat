@@ -16,7 +16,6 @@ from treechat.domain.model import (
 
 TITLE_MAX = 200
 CONTENT_MAX = 100_000
-INTENT_MAX = 200
 CONCLUSION_MAX = 2_000
 
 
@@ -39,16 +38,6 @@ def clean_content(content: str) -> str:
     return content
 
 
-def clean_intent(intent: str | None) -> str | None:
-    """Req 4.3: optional; empty means none."""
-    if intent is None:
-        return None
-    t = intent.strip()
-    if len(t) > INTENT_MAX:
-        raise ValidationError("intent", f"Intent must be at most {INTENT_MAX} characters.")
-    return t or None
-
-
 def clean_conclusion(outcome: Outcome, conclusion: str | None) -> str | None:
     """Req 12.2-12.3: required for merged and kept, optional for abandoned."""
     t = (conclusion or "").strip()
@@ -57,15 +46,6 @@ def clean_conclusion(outcome: Outcome, conclusion: str | None) -> str | None:
     if not t and outcome is not Outcome.ABANDONED:
         raise ValidationError("conclusion", "A conclusion is required to close as merged or kept.")
     return t or None
-
-
-def anchor_error(content: str, start: int, end: int, quoted_text: str) -> str | None:
-    """Req 4.5: offsets are code points (Python str indices); the slice must equal the quote."""
-    if not (0 <= start < end <= len(content)):
-        return f"Offsets {start}-{end} are outside the message (length {len(content)})."
-    if content[start:end] != quoted_text:
-        return f"quoted_text does not match the message text at {start}-{end}."
-    return None
 
 
 # --- Status machine (Req 10.1, 12.7-12.9, 2.8) ---------------------------------------------------

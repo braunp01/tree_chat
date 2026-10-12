@@ -67,22 +67,6 @@ async def run_reply(ctx: Ctx, provider: Provider, prepared: PreparedReply, emit:
     emit({"type": "done", "message": message_out(message)})
 
 
-async def generate_intent(ctx: Ctx, provider: Provider, branch_id: BranchId) -> str | None:
-    """Req 11.1: a one-line Generated_Intent from the Anchor and its Message only."""
-    src = drafts.draft_source(ctx, branch_id)
-    if src is None or src.intent:
-        return None
-    try:
-        system, prompt = prompts.intent_prompt(src.anchor_quote, src.anchor_message)
-        text = prompts.one_line(await provider.complete(system, prompt, 300), prompts.INTENT_MAX)
-        if text:
-            drafts.store_generated(ctx, branch_id, "intent", text, ctx.settings.model)
-        return text or None
-    except (ProviderError, DomainError) as exc:
-        log.info("generated intent skipped: %s", exc)  # Req 11.3: the Anchor quote is shown instead
-        return None
-
-
 async def generate_standing(ctx: Ctx, provider: Provider, branch_id: BranchId) -> str | None:
     """Req 11.2: where a parked Tangent that has replies stands."""
     src = drafts.draft_source(ctx, branch_id)

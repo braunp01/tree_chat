@@ -25,16 +25,6 @@ def _transcript(messages: list[tuple[Role, str]]) -> str:
     return "\n\n".join(f"{label[r]}: {_clip(t, MAX_MESSAGE_CHARS)}" for r, t in recent)
 
 
-def intent_prompt(anchor_quote: str, anchor_message: str) -> tuple[str, str]:
-    """Req 11.1: from the Anchor and its Message only."""
-    return _SYSTEM, (
-        f"The user selected this passage in a chat message to explore as a side topic:\n\n"
-        f"<passage>{_clip(anchor_quote, 1000)}</passage>\n\n"
-        f"It appears in this message:\n\n<message>{_clip(anchor_message, MAX_MESSAGE_CHARS)}</message>\n\n"
-        f"In at most {INTENT_MAX} characters, state what the user probably wants to explore. One line."
-    )
-
-
 def standing_prompt(intent: str | None, anchor_quote: str, messages: list[tuple[Role, str]]) -> tuple[str, str]:
     """Req 11.2: where a parked Tangent stands, from its own Messages."""
     return _SYSTEM, (

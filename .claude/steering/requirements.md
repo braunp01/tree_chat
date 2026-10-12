@@ -24,9 +24,13 @@ Habits that kept this file useful:
 
 Tree Chat is a local chat client for one person talking to an LLM. It addresses one problem:
 in a linear chat, a tangent either derails the main thread or gets suppressed and lost. In Tree
-Chat a tangent becomes a Branch anchored to the exact passage that prompted it. It can be
-spawned without leaving the current thread, parked in a queue, resumed later and closed with a
-short Conclusion that is merged back as a Note. The whole conversation is a visible tree.
+Chat you go back to any earlier point of the conversation and carry on from there; that starts a
+new Branch and leaves the original thread intact. The whole conversation is a visible tree.
+(Until 12 Oct 2026 a tangent was spawned from a selected passage; the owner dropped that.)
+
+**It must look and behave like an ordinary chat** (owner's decision, 12 Oct 2026): the conversation up to where
+you are, the latest reply, and one box to type in. Branching happens by going back to an earlier point and
+sending from there; it never needs a second kind of Send.
 
 The tool must **discourage rabbit-holing as well as enable tangents**. Closing a Branch with a
 Conclusion is a first-class operation, not an afterthought.
@@ -48,12 +52,16 @@ pinning: owner's decision, 11 Oct 2026), and deleting anything (see Req 16.3). F
 - **Trunk**: the root Branch of a Tree. It has no Anchor, no Fork_Point and no Framing_Block, and
   it is always Open.
 - **Branch**: a linear sequence of Messages within a Tree, with exactly one parent Branch (except
-  the Trunk). Branches form a strict tree, never a DAG. A Branch is a Tangent or an Alternative.
-- **Tangent**: a Branch spawned from a passage to explore a side question. It carries an Intent,
-  and a Framing_Block.
-- **Alternative**: a Branch created by editing a user Message or regenerating an assistant Message.
-  It continues the same conversation differently. It has no Intent and no Framing_Block, and it
-  always inherits.
+  the Trunk). Branches form a strict tree, never a DAG. A Branch is an Alternative (or, in Stores made before 12 Oct 2026, a Tangent).
+- **Tangent**: *(legacy)* a Branch spawned from a selected passage, with an Intent and a Framing_Block.
+  No longer created (owner, 12 Oct 2026); Tangents already in a Store keep working unchanged (Req 7.3, 7.6).
+- **Alternative**: a Branch that continues the conversation differently from an earlier point. It is
+  created by sending a Message at a Current_Point that is not a Tip (Req 19.5), by editing a user
+  Message or by regenerating an assistant Message. It has no Intent and no Framing_Block, and it
+  always inherits, so what the model receives is exactly the conversation on screen.
+- **Current_Point**: the Message the user is "at". The main view shows the conversation from the
+  Trunk's first Message up to it, and nothing after it. Normally it is the Tip of a Branch; the user
+  can move it to any earlier assistant Message or Note.
 - **Message**: an immutable unit of conversation with role `user`, `assistant` or `note`. Messages
   are never edited or deleted.
 - **Note**: a Message with role `note` that a Merge appends to a target Branch. It carries a
@@ -87,8 +95,8 @@ pinning: owner's decision, 11 Oct 2026), and deleting anything (see Req 16.3). F
   Branch. It never rewrites history.
 - **Anchor_Marker**: the persistent margin mark beside an anchored passage, showing the Status
   of the Branch (or Branches) anchored there.
-- **Path_View**: the main reading pane for one Branch: what that Branch knows, then its own
-  Messages.
+- **Path_View**: the main view: the conversation from the Trunk's first Message to the Current_Point,
+  as one continuous chat (Req 19.1).
 - **Outline**: the tree of Branches (not Messages) shown beside the Path_View, drawn as the Branch_Graph.
 - **Branch_Graph**: the Outline drawn as a node-link diagram: one node per Branch, an edge from each parent to its children, the Trunk at the left and depth increasing to the right, so direction is implicit in position. It shows the current Branch's neighbourhood in full (path from the Trunk, siblings, children) and hides everything else in collapsed nodes.
 - **Tree_Map**: the Branch_Graph enlarged to fill the window (`M`) and zoomed and panned freely. It is
@@ -145,10 +153,14 @@ original, so that I can compare and nothing I wrote disappears.
 1. THE Store SHALL never change or delete a persisted Message or Context_Manifest. An attempt to do so SHALL fail.
 2. WHEN the user edits a user Message, THE Backend_API SHALL create an Alternative whose parent is the Branch that owns the edited Message. The Alternative's Anchor is the whole edited Message, its Fork_Point is the edited Message's predecessor, and its first Message is the edited text.
 3. WHEN the user regenerates an assistant Message, THE Backend_API SHALL create an Alternative in the same way. Its first Message is a new reply generated from the same predecessor.
-4. THE Front_End SHALL show, on a Message that has Alternatives, how many exist and a control to move between them. The original stays where it was.
+4. (Retired 12 Oct 2026: forks are shown only in the Branch_Graph, Req 19.7.) THE Front_End SHALL show, on a Message that has Alternatives, how many exist and a control to move between them. The original stays where it was.
 5. THE Backend_API SHALL give an Alternative the same Inherited_Prefix rules as a Tangent, with no Framing_Block of its own. WHERE the Alternative replaces the first Message of a Tangent, it stands where that Message stood, so its Context carries that Tangent's Framing_Block immediately after the Alternative's first Message (Req 7.1).
 
-### Requirement 4: Spawning a Tangent from a passage
+### Requirement 4: Spawning a Tangent from a passage (Retired)
+
+> **Retired 12 Oct 2026** (owner: drop passage tangents from the front and back end). Branching is now
+> "go back to a point and send" (Req 19.5). Nothing creates a Tangent any more; Tangents already in a Store
+> are read and replied to as before. The criteria are kept below only so that references stay valid.
 
 **User Story:** As the user, I want to select a passage in any message and spawn a Tangent from
 it without leaving where I am, so that I can capture the thought and keep going.
@@ -166,7 +178,9 @@ it without leaving where I am, so that I can capture the thought and keep going.
 9. WHEN a Tangent is spawned without an Intent, THE Backend_API SHALL generate a Generated_Intent from the Anchor and the Anchor's Message in the background. Spawning SHALL not wait for it, and it SHALL never be used in a Framing_Block (Req 11).
 10. WHERE the parent Branch has Notes after the Anchor's Message, THE Front_End SHALL say so in the popover and offer Fork_Point "at the latest message" (Req 9.1), because a Tangent forked at the passage will not see those Notes (Req 13.6).
 
-### Requirement 5: Anchor markers
+### Requirement 5: Anchor markers (Retired)
+
+> **Retired 12 Oct 2026** with passage tangents (Req 4). Forks are shown in the Branch_Graph.
 
 **User Story:** As the user, I want to see in the margin which passages have Branches and what
 state they are in, so that the tree is visible from inside the conversation.
@@ -213,7 +227,10 @@ chose, and to be able to see what was sent, so that I can trust and reproduce wh
 every Branch inherits (Req 7.1). The numbers of the other requirements are unchanged so that
 existing references stay valid.
 
-### Requirement 9: Choosing and changing the Fork_Point
+### Requirement 9: Choosing and changing the Fork_Point (Retired)
+
+> **Retired 12 Oct 2026** with passage tangents: the Fork_Point of a new Branch is always the point the
+> user sent from (Req 19.5).
 
 **User Story:** As the user, I want to choose whether a Tangent knows only the conversation up to
 the anchored passage or everything up to now, so that a tangent resumed later can catch up.
@@ -225,6 +242,10 @@ the anchored passage or everything up to now, so that a tangent resumed later ca
 3. IF a Fork_Point change is requested for a Branch that has Messages, THEN THE Backend_API SHALL reject it with a validation error identifying the `fork_point` field.
 
 ### Requirement 10: Parking, resuming and the Queue
+
+> **12 Oct 2026:** Status controls, the Queue and closing (Req 10.2-10.7, 12.1, 12.5-12.6, 15.1-15.3, 18.12) are
+> not in the main view until the owner decides how they fit the conversation-first model (design.md, Open
+> questions). The Backend_API keeps every Status rule.
 
 **User Story:** As the user, I want tangents I am not pursuing now to wait in a queue I can triage,
 so that thoughts are kept without derailing me.
@@ -241,6 +262,10 @@ so that thoughts are kept without derailing me.
 8. Navigating away from an `open` Branch SHALL not change its Status. Several Branches may be `open` at once.
 
 ### Requirement 11: Generated descriptions
+
+> **12 Oct 2026:** 11.1 and 11.4 are retired with Tangents (there is no Intent to stand in for). A Branch is
+> labelled by the start of its first user Message (Req 18.2). 11.2-11.3 are hidden with the Queue (Req 10
+> note); 11.5 still holds.
 
 **User Story:** As the user, I want a short description of a branch I did not label, so that I can
 triage the Queue quickly.
@@ -268,7 +293,7 @@ found, so that finishing tangents is easier than leaving them open.
 6. WHEN the user closes a Branch that has descendants that are not `closed`, THE Front_End SHALL list them and offer to close them as `abandoned` in the same action. They stay as they are unless the user accepts.
 7. WHEN the user reopens a `closed` Tangent, THE Backend_API SHALL set it to `open` and keep the earlier closing record and any Note it produced. A later close adds a new closing record.
 8. WHILE a Branch is `closed`, THE Backend_API SHALL reject new Messages in it with a `conflict` error.
-9. THE Backend_API SHALL reject closing the Trunk. An Alternative may be closed with any Outcome except `merged`.
+9. THE Backend_API SHALL reject closing the Trunk. An Alternative may be closed with any Outcome except `merged`. (12 Oct 2026: now that every new Branch is an Alternative, this must be revisited before closing returns to the Front_End; see design.md, Open questions.)
 
 ### Requirement 13: Merging a Conclusion
 
@@ -293,10 +318,10 @@ becoming unreadable, so that I can move around confidently.
 
 #### Acceptance Criteria
 
-1. THE Front_End SHALL show an Outline of the current Tree's Branches (one node per Branch, not per Message), drawn as the Branch_Graph (Req 18). Each node shows Status, Intent (or labelled Generated_Intent), Kind (Tangent or Alternative) and Message count.
+1. THE Front_End SHALL show an Outline of the current Tree's Branches (one node per Branch, not per Message), drawn as the Branch_Graph (Req 18). Each node shows its label (Req 18.2), Kind and Message count.
 2. THE Front_End SHALL expand the Outline along the path to the current Branch (Req 18.3) and collapse `closed` Branches by default. Every other node can be expanded and collapsed.
 3. THE Front_End SHALL show a breadcrumb of the current Branch's ancestry, from the Trunk down, with each level clickable.
-4. THE Front_End SHALL show in the Path_View, for any Branch other than the Trunk, its Inherited_Prefix collapsed to a one-line summary ("N earlier messages from …") with the Anchor's Message always visible; then a framing card (Anchor quote, Intent, Fork_Point); then the Branch's own Messages.
+4. (Superseded 12 Oct 2026 by Req 19.1: the whole path is shown as one chat, nothing collapsed.) THE Front_End SHALL show in the Path_View, for any Branch other than the Trunk, its Inherited_Prefix collapsed to a one-line summary ("N earlier messages from …") with the Anchor's Message always visible; then a framing card (Anchor quote, Intent, Fork_Point); then the Branch's own Messages.
 5. (Retired with Clean mode, 11 Oct 2026.)
 6. THE Front_End SHALL support keyboard navigation of the Outline: up and down move between siblings, left moves to the parent, right moves to the first child, Enter opens the focused Branch, and space expands and collapses. (Amended 11 Oct 2026: left and right used to collapse and expand; with depth running left to right they now follow the picture. `+` and `-` zoom, Req 18.11.)
 7. THE Front_End SHALL remain usable with at least 500 Branches and 10,000 Messages in one Tree. Opening a Branch then completes within one second on the owner's machine.
@@ -314,22 +339,43 @@ becoming unreadable, so that I can move around confidently.
 
 ### Requirement 18: The Branch_Graph
 
+> **12 Oct 2026:** kept as the navigator in the conversation-first view (owner). 18.12 is hidden with Park and
+> the Queue (Req 10 note). Earlier points in a Branch are chosen in the chat (Req 19.3).
+
 **User Story:** As the user, I want to see the Branch I am in together with its parent, its siblings and its children as a diagram that grows from left to right with depth, so that I always know where I am in the tree and can step to a neighbour in one click.
 
 #### Acceptance Criteria
 
 1. THE Front_End SHALL show the Branch_Graph of the current Tree in a panel beside the Path_View at all times, without a key press: one node per visible Branch, one edge from each parent to its children, the Trunk at the left and depth increasing to the right.
-2. THE Front_End SHALL draw each node with its Status (a symbol and a colour together, never colour alone), its Kind, its label (Intent, else labelled Generated_Intent, else Anchor quote) and its Message count. It SHALL highlight the current Branch and the edges on its path from the Trunk.
+2. THE Front_End SHALL draw each node with its Status (a symbol and a colour together, never colour alone), its Kind, its label (the start of its first user Message; for a Branch from before 12 Oct 2026, its Intent, else labelled Generated_Intent, else Anchor quote) and its Message count. It SHALL highlight the current Branch and the edges on its path from the Trunk.
 3. THE Branch_Graph SHALL always draw as nodes: the path from the Trunk to the current Branch, every sibling of each Branch on that path, and the children of the current Branch. The children of any other Branch are hidden in one collapsed node under it that says how many Branches it holds and how many of them are `open` and `parked`.
 4. WHEN the user activates a collapsed node, or the toggle on a node, THE Branch_Graph SHALL expand or collapse that Branch's children. THE Front_End SHALL keep that choice while the user stays in the Tree. What Req 18.3 requires to be drawn cannot be collapsed, and `closed` Branches start collapsed (Req 14.2).
-5. WHEN the user activates a node, THE Front_End SHALL navigate to that Branch. Navigation SHALL NOT change any Status (Req 10.3, 10.8).
+5. WHEN the user activates a node, THE Front_End SHALL navigate to that Branch with its Tip as the Current_Point (Req 19.2). Navigation SHALL NOT change any Status (Req 10.3, 10.8).
 6. THE Branch_Graph SHALL put Branches of equal depth in one column and order siblings by Anchor position (the Anchor Message's Conversation_Position, then the offset), then creation time. Adding a Branch SHALL NOT change the order of existing siblings. An Alternative is drawn with a dashed edge so it reads as a different kind of child.
 7. WHEN the current Branch changes, THE Branch_Graph SHALL scroll so that the current node is in view.
 8. THE Branch_Graph SHALL be fully operable from the keyboard (Req 14.6), and SHALL tell assistive technology each node's label, Status, depth and place among its siblings.
-9. WHEN the user hovers or focuses a node, THE Front_End SHALL show its full label, its Anchor quote, its Status and how long ago the Status last changed.
+9. WHEN the user hovers or focuses a node, THE Front_End SHALL show its full label, the Message it forked from (its start), its Status and how long ago the Status last changed.
 10. THE Branch_Graph SHALL draw and respond within one second with 500 Branches in the Tree (Req 14.7), because hidden Branches are not drawn.
 11. THE Branch_Graph SHALL pan (drag, or Shift and the arrow keys) and zoom (wheel, pinch, `+` and `-`) and SHALL offer "fit" (a button, or `0`) to bring the whole drawn graph into view, however small that makes it. WHEN the user presses `M`, THE Front_End SHALL enlarge the panel to fill the window and restore it on `M` or Escape (Req 14.8). WHEN the user activates a node in the enlarged panel, THE Front_End SHALL navigate there and restore the panel.
 12. THE Front_End SHALL show Park, Resume or Reopen for the current Branch in the Path_View header, whichever its Status allows (Req 10.1), so the Status symbols in the Branch_Graph can be acted on. Closing, with its Conclusion, stays in the close panel (Req 12.1).
+
+### Requirement 19: Conversation-first view and sending from any point
+
+**User Story:** As the user, I want the screen to look and work like an ordinary chat, and to branch simply by
+going back to an earlier point and typing, so that I can follow a tangent depth-first without losing the main
+thread and without thinking about branches.
+
+#### Acceptance Criteria
+
+1. THE Front_End SHALL show, as its main view, the conversation from the Trunk's first Message to the Current_Point as one continuous list of Messages, oldest first, with the composer below it. Nothing is collapsed or set apart, except that a Note is a distinct block (Req 13.7).
+2. WHEN the user opens a Tree or a Branch, THE Front_End SHALL set the Current_Point to the Branch's Tip (for a Tree, the Tip of the Branch last used) and show the latest Message.
+3. WHEN the user chooses "go back to here" on an assistant Message or Note in the conversation, THE Front_End SHALL make that Message the Current_Point: the view shows the path up to it and nothing after it. Choosing a point SHALL create nothing and change no Status.
+4. WHEN the user sends a Message and the Current_Point is the Tip of its Branch, THE Backend_API SHALL append it to that Branch (Req 2.1).
+5. WHEN the user sends a Message and the Current_Point is an assistant Message or Note that is not the Tip of its Branch, or is the Tip of a `closed` Branch, THE Backend_API SHALL, in one transaction, create an Alternative whose parent is the Branch that owns the Current_Point and whose Anchor and Fork_Point are the Current_Point, and append the Message as its first Message. THE Front_End SHALL then show that Branch, with the reply arriving. There is one Send action.
+6. WHILE the Current_Point is not the Tip of its Branch, THE Front_End SHALL say just above the composer that sending will start a new branch from this point, and offer to jump to the latest Message.
+7. THE Front_End SHALL show forks only in the Branch_Graph (owner, 12 Oct 2026: no switcher in the chat). The chat shows the one path to the Current_Point.
+8. THE Front_End SHALL keep the main view free of controls that are not needed to read and write: per-Message actions (edit, regenerate, go back to here, see what was sent) appear only on hover or focus.
+9. A user Message cannot be the Current_Point below a Tip; to change what was asked, the user edits it (Req 3.2), which is the same as going back to the Message before it and sending.
 
 ### Requirement 15: Discouraging rabbit-holing
 
