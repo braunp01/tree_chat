@@ -19,7 +19,7 @@ class Config:
     port: int
     model: str
     effort: str
-    nudge_after: int
+    summary_model: str
     provider: ProviderKind
 
 
@@ -30,6 +30,6 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         port=int(e.get("TREECHAT_PORT", "8765")),
         model=e.get("TREECHAT_MODEL", "claude-opus-5-5"),
         effort=e.get("TREECHAT_EFFORT", "high"),
-        nudge_after=int(e.get("TREECHAT_NUDGE_AFTER", "8")),
+        summary_model=e.get("TREECHAT_SUMMARY_MODEL", "claude-haiku-5-5"),  # Req 9 (owner, 12 Oct 2026)
         provider=ProviderKind(e.get("TREECHAT_PROVIDER", "anthropic")),
     )

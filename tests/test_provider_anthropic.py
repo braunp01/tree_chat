@@ -240,7 +240,7 @@ async def test_http_failures_map_to_error_categories(status: int, message: str, 
     with pytest.raises(ProviderError) as e:
         await run(provider(wire))
     assert e.value.category is category
-    assert "test-key-not-real" not in e.value.message  # Req 17.2: no secrets in errors
+    assert "test-key-not-real" not in e.value.message  # Req 8.2: no secrets in errors
 
 
 async def test_a_dropped_connection_is_a_provider_error() -> None:
@@ -252,14 +252,15 @@ async def test_a_dropped_connection_is_a_provider_error() -> None:
     assert e.value.category is ErrorCategory.PROVIDER_ERROR
 
 
-async def test_without_credentials_no_request_is_made(monkeypatch: pytest.MonkeyPatch) -> None:  # Req 17.3
+async def test_without_credentials_no_request_is_made(monkeypatch: pytest.MonkeyPatch) -> None:  # Req 8.3
     monkeypatch.setattr(ap, "has_credentials", lambda *a, **k: False)
     p = AnthropicProvider("claude-opus-5-5", "high")  # builds its own client lazily
     with pytest.raises(ProviderError) as e:
         await run(p)
     assert e.value.category is ErrorCategory.PROVIDER_UNAVAILABLE and "ANTHROPIC_API_KEY" in e.value.message
     with pytest.raises(ProviderError):
-        await p.complete("s", "p", 10)
+        await p.summarize("s", "p")
+    assert p.has_credentials() is False  # Req 9.8
 
 
 def test_credential_detection_never_reads_values(tmp_path: Path) -> None:
@@ -274,7 +275,7 @@ def test_credential_detection_never_reads_values(tmp_path: Path) -> None:
     assert has_credentials({}, profiles)
 
 
-async def test_complete_returns_plain_text_and_uses_low_effort() -> None:  # Req 11.1, 12.1
+async def test_a_summary_uses_haiku_at_low_effort_without_fallbacks() -> None:  # Req 9.2, owner's answer A
     msg = {
         "id": "msg_2",
         "type": "message",
@@ -286,14 +287,19 @@ async def test_complete_returns_plain_text_and_uses_low_effort() -> None:  # Req
         "usage": {"input_tokens": 5, "output_tokens": 5},
     }
     wire = Wire(body=json.dumps(msg).encode(), content_type="application/json")
-    out = await provider(wire).complete("system text", "summarise this", 100)
+    p = provider(wire)
+    out = await p.summarize("system text", "summarise this")
     assert out == "A short summary."
     body = json.loads(wire.requests[0].content)
+    assert body["model"] == "claude-haiku-5-5" == p.summary_model
     assert body["output_config"] == {"effort": "low"} and body["max_tokens"] >= 2000
+    assert body["thinking"] == {"type": "adaptive"}
     assert body["system"] == "system text" and "stream" not in body
+    assert "fallbacks" not in body  # Haiku 5.5 has no server-side fallback
+    assert "anthropic-beta" not in wire.requests[0].headers
 
 
-async def test_complete_rejects_an_empty_answer() -> None:
+async def test_a_summary_rejects_an_empty_answer() -> None:  # Req 9.5
     msg = {
         "id": "m",
         "type": "message",
@@ -306,15 +312,15 @@ async def test_complete_rejects_an_empty_answer() -> None:
     }
     wire = Wire(body=json.dumps(msg).encode(), content_type="application/json")
     with pytest.raises(ProviderError):
-        await provider(wire).complete("s", "p", 10)
+        await provider(wire).summarize("s", "p")
 
 
-def test_nothing_in_the_default_run_can_reach_the_real_api() -> None:  # Req 17.5
+def test_nothing_in_the_default_run_can_reach_the_real_api() -> None:  # Req 8.5
     import socket
 
     s = socket.socket()
     try:
-        with pytest.raises(RuntimeError, match="Req 17.5"):
+        with pytest.raises(RuntimeError, match="Req 8.5"):
             s.connect(("api.anthropic.com", 443))
     finally:
         s.close()

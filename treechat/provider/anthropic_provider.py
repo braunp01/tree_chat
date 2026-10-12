@@ -1,7 +1,7 @@
 """The real provider: Anthropic's Messages API through the official SDK (design.md, Provider).
 
-Credentials are read here and nowhere else (Req 17.2). A missing credential never stops the app starting; it only
-makes replies fail with `provider_unavailable` (Req 17.3).
+Credentials are read here and nowhere else (Req 8.2). A missing credential never stops the app starting; it only
+makes replies fail with `provider_unavailable` (Req 8.3).
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ import anthropic
 
 from treechat.provider.base import ErrorCategory, OnDelta, ProviderError, ProviderResult
 
+DEFAULT_SUMMARY_MODEL = "claude-haiku-5-5"  # Req 9 (owner, 12 Oct 2026); TREECHAT_SUMMARY_MODEL overrides it
+SUMMARY_MAX_TOKENS = 2000  # a 5-6 word answer plus low-effort thinking, which shares this budget
 # Server-side refusal fallback in its "default" form: Anthropic routes a declined request by refusal category.
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 _THINKING_TYPES = ("thinking", "redacted_thinking")
@@ -24,7 +26,7 @@ _UNAVAILABLE = (
 
 
 def has_credentials(env: dict[str, str] | None = None, profile_dir: Path | None = None) -> bool:
-    """True if the SDK would find credentials. Never reads or returns their value (Req 17.2)."""
+    """True if the SDK would find credentials. Never reads or returns their value (Req 8.2)."""
     e = os.environ if env is None else env
     if e.get("ANTHROPIC_API_KEY") or e.get("ANTHROPIC_AUTH_TOKEN"):
         return True
@@ -74,8 +76,10 @@ class AnthropicProvider:
         client: anthropic.AsyncAnthropic | None = None,
         max_retries: int = 2,
         extra_betas: tuple[str, ...] = (),
+        summary_model: str = DEFAULT_SUMMARY_MODEL,
     ) -> None:
         self.model = model
+        self._summary_model = summary_model
         self.effort = effort
         self.max_retries = max_retries
         self.betas = [FALLBACK_BETA, *extra_betas]
@@ -118,18 +122,25 @@ class AnthropicProvider:
             text=text, blocks=blocks, model=str(final.model), stop_reason=str(final.stop_reason), usage=usage
         )
 
-    async def complete(self, system: str, prompt: str, max_tokens: int) -> str:
+    @property
+    def summary_model(self) -> str:
+        return self._summary_model
+
+    def has_credentials(self) -> bool:
+        return has_credentials()
+
+    async def summarize(self, system: str, prompt: str) -> str:
+        """Req 9.2: Claude Haiku 5.5 at low effort (owner, 12 Oct 2026). Haiku 5.5 has no server-side fallback, so a
+        refusal is simply a failed summary and the node keeps its fallback label (Req 9.5)."""
         client = self._get_client()
         try:
-            msg = await client.beta.messages.create(
-                model=self.model,
-                max_tokens=max(max_tokens, 2000),  # thinking shares the budget on this model
+            msg = await client.messages.create(
+                model=self._summary_model,
+                max_tokens=SUMMARY_MAX_TOKENS,
                 system=system,
                 messages=[{"role": "user", "content": prompt}],
                 thinking={"type": "adaptive"},
                 output_config={"effort": "low"},
-                betas=self.betas,
-                fallbacks="default",
             )
         except anthropic.AnthropicError as exc:
             raise map_error(exc) from exc

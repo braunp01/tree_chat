@@ -11,4 +11,4 @@ from treechat.provider.fake import FakeProvider
 def make_provider(cfg: Config) -> Provider:
     if cfg.provider is ProviderKind.FAKE:
         return FakeProvider()
-    return AnthropicProvider(cfg.model, cfg.effort)
+    return AnthropicProvider(cfg.model, cfg.effort, summary_model=cfg.summary_model)
