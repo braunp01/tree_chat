@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 
@@ -104,3 +105,43 @@ def load_snapshot(conn: sqlite3.Connection, tree_id: TreeId) -> TreeSnapshot:
             for r in rows
         ]
     )
+
+
+# --- Branch_Summaries (Req 9) -----------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SummaryRow:
+    message_id: MessageId
+    summary: str
+    model: str
+    source: tuple[MessageId, ...]
+    prompt_version: int
+    created_at: str
+
+
+def insert_summary(conn: sqlite3.Connection, s: SummaryRow) -> bool:
+    """Req 9.3: the first summary for a Branch wins; a later one is dropped, never written over. True if inserted."""
+    cur = conn.execute(
+        "INSERT INTO branch_summaries (message_id, summary, model, source, prompt_version, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (message_id) DO NOTHING",  # only a duplicate is ignored, never a CHECK
+        (s.message_id, s.summary, s.model, json.dumps(list(s.source)), s.prompt_version, s.created_at),
+    )
+    return cur.rowcount == 1
+
+
+def summaries_for_tree(conn: sqlite3.Connection, tree_id: TreeId) -> dict[MessageId, SummaryRow]:
+    rows = conn.execute(
+        "SELECT s.* FROM branch_summaries s JOIN messages m ON m.id = s.message_id WHERE m.tree_id = ?", (tree_id,)
+    )
+    return {
+        r["message_id"]: SummaryRow(
+            r["message_id"],
+            r["summary"],
+            r["model"],
+            tuple(json.loads(r["source"])),
+            r["prompt_version"],
+            r["created_at"],
+        )
+        for r in rows
+    }
