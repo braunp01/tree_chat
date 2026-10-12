@@ -1,6 +1,6 @@
 # Design Document
 
-> **Status: v2, implemented 12 Oct 2026 (branch `message-tree`). Req 9 (Branch summaries) designed, owner's answers in; not yet built.** Replaces the v1 design. The model is now a plain tree of immutable
+> **Status: v2, implemented 12 Oct 2026 (branch `message-tree`). Req 9 (Branch summaries) implemented on branch `node-summaries`.** Replaces the v1 design. The model is now a plain tree of immutable
 > Messages; v1's Branch records, framing, Notes, Status and merging are gone. v1 is in git history.
 
 ## Overview
