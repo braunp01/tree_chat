@@ -1,19 +1,21 @@
 # Tree Chat
 
-A local, single-user chat client where every tangent becomes a branch anchored to the passage
-that prompted it. Branches can be parked, resumed, and closed with a conclusion that is merged
-back into an ancestor. The whole conversation is a visible, zoomable tree.
+A local, single-user chat client that works like an ordinary chat, except that a conversation is a tree.
+Go back to any earlier reply and send from there: that starts a new branch and leaves everything else as it
+was. A graph of the tree sits beside the chat. Nothing is ever edited, regenerated or deleted, and the model
+sees exactly the conversation on screen.
 
 - What it does and why: `.claude/steering/requirements.md` and `.claude/steering/design.md`.
 - How to build, run and test: `.claude/steering/tech.md`.
 
-Quick start (Windows, needs uv and Node):
+Quick start (Windows PowerShell, needs uv and Node):
 
-```bash
+```powershell
 uv sync
-cd web && npm ci && npm run build && cd ..
+cd web; npm ci; npm run build; cd ..
 uv run treechat
 ```
 
-Then open http://127.0.0.1:8765. Set `ANTHROPIC_API_KEY` for real replies, or
-`TREECHAT_PROVIDER=fake` to run offline. Tests never call a real model: `uv run pytest`.
+Then open http://127.0.0.1:8765. Set `ANTHROPIC_API_KEY` for real replies, or run offline with the fake
+provider: `$env:TREECHAT_PROVIDER="fake"; uv run treechat` (in cmd: `set TREECHAT_PROVIDER=fake` first).
+Tests never call a real model: `uv run pytest`.

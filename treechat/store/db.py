@@ -15,6 +15,10 @@ class StoreTooNew(Exception):
     """The file was written by a newer version of the app; refuse to touch it."""
 
 
+class IncompatibleStore(Exception):
+    """The file is a v1 Store (Branch records); v2 never opens it (design.md, Store)."""
+
+
 def _scripts() -> list[tuple[int, str]]:
     found: list[tuple[int, str]] = []
     for entry in resources.files(MIGRATIONS_PACKAGE).iterdir():
@@ -55,8 +59,10 @@ def connect(path: str | Path) -> sqlite3.Connection:
 
 
 def migrate(conn: sqlite3.Connection) -> int:
-    """Bring the file up to date, one transaction per script. Safe to run on every start (Req 16.2)."""
+    """Bring the file up to date, one transaction per script. Safe to run on every start (Req 7.2)."""
     current = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'branches'").fetchone():
+        raise IncompatibleStore("this data file was made by Tree Chat v1; v2 uses a new file (TREECHAT_DB)")
     scripts = _scripts()
     if current > len(scripts):
         raise StoreTooNew(f"this data file is version {current}, but this app only knows version {len(scripts)}")
@@ -99,7 +105,7 @@ class Store:
 
     @contextmanager
     def transaction(self) -> Generator[sqlite3.Connection]:
-        """All writes of one operation, or none of them (Req 16.5)."""
+        """All writes of one operation, or none of them (Req 7.3)."""
         conn = connect(self.path)
         try:
             conn.execute("BEGIN IMMEDIATE")

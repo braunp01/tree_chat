@@ -1,4 +1,4 @@
-"""One reply job per Branch, independent of any browser connection (Req 2.5, 2.6)."""
+"""One reply job per user Message, independent of any browser connection (Req 3.7, 3.8)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Coroutine
 from typing import Any
 
 from treechat.domain.errors import Busy
-from treechat.domain.model import BranchId
+from treechat.domain.model import MessageId
 from treechat.jobs.replies import run_reply
 from treechat.provider.base import Provider
 from treechat.services.ctx import Ctx
@@ -20,9 +20,9 @@ TERMINAL = ("done", "error")
 
 
 class ReplyJob:
-    def __init__(self, job_id: str, branch_id: BranchId) -> None:
+    def __init__(self, job_id: str, user_message_id: MessageId) -> None:
         self.job_id = job_id
-        self.branch_id = branch_id
+        self.user_message_id = user_message_id
         self.finished = False
         self._events: list[dict[str, Any]] = []
         self._queues: list[asyncio.Queue[dict[str, Any]]] = []
@@ -66,22 +66,22 @@ class ReplyJob:
 
 class JobRegistry:
     def __init__(self) -> None:
-        self._jobs: dict[BranchId, ReplyJob] = {}
+        self._jobs: dict[MessageId, ReplyJob] = {}
         self._background: set[asyncio.Task[Any]] = set()
 
-    def is_busy(self, branch_id: BranchId) -> bool:
-        return branch_id in self._jobs
+    def is_busy(self, user_message_id: MessageId) -> bool:
+        return user_message_id in self._jobs
 
-    def get(self, branch_id: BranchId) -> ReplyJob | None:
-        return self._jobs.get(branch_id)
+    def get(self, user_message_id: MessageId) -> ReplyJob | None:
+        return self._jobs.get(user_message_id)
 
-    def start_reply(self, ctx: Ctx, provider: Provider, branch_id: BranchId) -> ReplyJob:
+    def start_reply(self, ctx: Ctx, provider: Provider, user_message_id: MessageId) -> ReplyJob:
         """Check the reply can be requested, then run it in the background. Errors raise here, before any streaming."""
-        if self.is_busy(branch_id):
-            raise Busy("A reply is already being generated in this branch.")
-        prepared = prepare_reply(ctx, branch_id)
-        job = ReplyJob(ctx.env.new_id(), branch_id)
-        self._jobs[branch_id] = job
+        if self.is_busy(user_message_id):
+            raise Busy("The reply to this message is already being written.")
+        prepared = prepare_reply(ctx, user_message_id)
+        job = ReplyJob(ctx.env.new_id(), user_message_id)
+        self._jobs[user_message_id] = job
         self._spawn(self._run(ctx, provider, prepared, job))
         return job
 
@@ -91,7 +91,7 @@ class JobRegistry:
         finally:
             if not job.finished:
                 job.emit({"type": "error", "error": "provider_error", "message": "The reply was interrupted."})
-            self._jobs.pop(job.branch_id, None)
+            self._jobs.pop(job.user_message_id, None)
 
     def spawn_background(self, coro: Coroutine[Any, Any, Any]) -> None:
         """Fire-and-forget work such as generated text; a reference is kept so it is not collected early."""

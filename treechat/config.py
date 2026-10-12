@@ -26,7 +26,7 @@ class Config:
 def load_config(env: dict[str, str] | None = None) -> Config:
     e = os.environ if env is None else env
     return Config(
-        db_path=Path(e.get("TREECHAT_DB", "data/tree_chat.sqlite3")),
+        db_path=Path(e.get("TREECHAT_DB", "data/tree_chat_v2.sqlite3")),
         port=int(e.get("TREECHAT_PORT", "8765")),
         model=e.get("TREECHAT_MODEL", "claude-opus-5-5"),
         effort=e.get("TREECHAT_EFFORT", "high"),

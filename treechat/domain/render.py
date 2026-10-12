@@ -1,4 +1,4 @@
-"""Turn a Manifest into the exact provider request (Req 7.4-7.5). Byte-deterministic: nothing volatile."""
+"""Turn a Manifest into the exact provider request (Req 4.2-4.3). Byte-deterministic: nothing volatile."""
 
 from __future__ import annotations
 
@@ -8,18 +8,15 @@ from collections.abc import Mapping
 from typing import Any
 
 from treechat.domain.context import SYSTEM_PROMPT_VERSION
-from treechat.domain.model import FramingEntry, Manifest, Message, MessageEntry, MessageId, Role
+from treechat.domain.model import Manifest, Message, MessageId, Role
 
-# Frozen. Changing this text changes every request prefix: bump SYSTEM_PROMPT_VERSION with it.
-SYSTEM_PROMPT_V1 = (
-    "You are the assistant in Tree Chat, a chat app where a conversation can branch into tangents.\n"
-    "Two kinds of text in user turns come from the app, not from the user:\n"
-    "- <tree_chat_framing> follows the first message of a tangent. It quotes the passage the tangent is about and "
-    "the user's intent. Follow its instruction to stay on the tangent.\n"
-    "- <tree_chat_note> carries the conclusion of a tangent that was closed and merged back here. Treat it "
-    "as established context the user has accepted, not as something they just said."
+# Frozen. Changing this text changes every request prefix: add a new version instead (Req 4.2).
+SYSTEM_PROMPT_V2 = (
+    "You are the assistant in Tree Chat, a chat app in which the user can go back to any earlier point of a "
+    "conversation and continue differently from there. The messages you receive are the complete conversation "
+    "along the current path; you do not see other branches."
 )
-SYSTEM_PROMPTS = {1: SYSTEM_PROMPT_V1}
+SYSTEM_PROMPTS = {2: SYSTEM_PROMPT_V2}
 assert SYSTEM_PROMPT_VERSION in SYSTEM_PROMPTS
 
 _EPHEMERAL = {"type": "ephemeral"}
@@ -28,65 +25,41 @@ type Block = dict[str, Any]
 type Turn = dict[str, Any]
 
 
-def _blocks_for(entry_message: Message, request_model: str) -> tuple[str, list[Block]]:
-    if entry_message.role is Role.ASSISTANT:
-        if entry_message.blocks_json:
-            blocks: list[Block] = json.loads(entry_message.blocks_json)
-            if entry_message.model is not None and entry_message.model != request_model:
+def _blocks_for(m: Message, request_model: str) -> list[Block]:
+    if m.role is Role.ASSISTANT:
+        if m.blocks_json:
+            blocks: list[Block] = json.loads(m.blocks_json)
+            if m.model is not None and m.model != request_model:
                 # Written by another model (a refusal fallback served it): its thinking is bound to that model and
-                # is not replayed here; the visible text still is.
+                # is not replayed here; the visible text still is (design.md, Thinking replay).
                 blocks = [b for b in blocks if b.get("type") not in ("thinking", "redacted_thinking")]
-            return "assistant", blocks
-        return "assistant", [{"type": "text", "text": entry_message.content}]
-    # User Messages and Notes are both user-role text; Notes are labelled by their own tags (Req 7.9).
-    return "user", [{"type": "text", "text": entry_message.content}]
+            return blocks
+        return [{"type": "text", "text": m.content}]
+    return [{"type": "text", "text": m.content}]
 
 
-def _mark_cache(blocks: list[Block]) -> bool:
+def _mark_cache(blocks: list[Block]) -> None:
     """Put the breakpoint on the last block that may carry one (not a thinking block)."""
     for block in reversed(blocks):
         if block.get("type") not in ("thinking", "redacted_thinking"):
             block["cache_control"] = dict(_EPHEMERAL)
-            return True
-    return False
+            return
 
 
 def render(manifest: Manifest, messages: Mapping[MessageId, Message]) -> dict[str, Any]:
     """The request parameters for the provider, excluding transport options (stream, betas, fallbacks).
 
-    Adjacent user-role entries (a user Message, Notes) merge into one user turn, in order. A Framing_Block is a
-    mid-conversation `system` message, which always follows a user turn and precedes an assistant turn or ends the
-    list. Stored assistant blocks, including signed thinking, are replayed unchanged: a Branch's Context only grows,
-    so every replayed block still sits on the prefix that produced it (design.md, Thinking blocks).
+    Roles alternate along a Path (Req 5.3), so each Message is one turn. Stored assistant blocks, including signed
+    thinking, are replayed unchanged: a Reply's Path never changes, so every replayed block still sits on the prefix
+    that produced it (Req 4.2, design.md Thinking replay).
     """
     turns: list[Turn] = []
-    entry_blocks: list[list[Block] | None] = []  # per entry: its own blocks (shared with `turns`), None for system
-    entries = manifest.entries
-    for i, entry in enumerate(entries):
-        if isinstance(entry, FramingEntry):
-            nxt = entries[i + 1] if i + 1 < len(entries) else None
-            if nxt is None or (isinstance(nxt, MessageEntry) and nxt.role is Role.ASSISTANT):
-                turns.append({"role": "system", "content": entry.text})
-                entry_blocks.append(None)
-                continue
-            # A tangent forked from a user Message that has no reply yet: the provider only accepts a system
-            # message before an assistant turn or at the end, so this framing travels as labelled user text.
-            role, blocks = "user", [{"type": "text", "text": entry.text}]
-        else:
-            role, blocks = _blocks_for(messages[entry.id], manifest.model)
-            blocks = copy.deepcopy(blocks)
-        entry_blocks.append(blocks)
-        if turns and turns[-1]["role"] == role:
-            turns[-1]["content"].extend(blocks)
-        else:
-            turns.append({"role": role, "content": list(blocks)})  # a copy: later entries extend this list
-    # Breakpoint 1 sits on the last block of the Inherited_Prefix itself, even when that block shares a turn with
-    # the Branch's own first Message. A system message cannot carry it, so step back to the nearest Message entry.
-    bp = manifest.cache_breakpoint_after
-    while bp is not None and bp >= 0 and entry_blocks[bp] is None:
-        bp -= 1
-    if bp is not None and bp >= 0:
-        _mark_cache(entry_blocks[bp] or [])
+    for i, entry in enumerate(manifest.entries):
+        m = messages[entry.id]
+        blocks = copy.deepcopy(_blocks_for(m, manifest.model))
+        if i == manifest.cache_breakpoint_after:
+            _mark_cache(blocks)
+        turns.append({"role": "assistant" if m.role is Role.ASSISTANT else "user", "content": blocks})
     return {
         "model": manifest.model,
         "max_tokens": manifest.max_tokens,
@@ -94,7 +67,7 @@ def render(manifest: Manifest, messages: Mapping[MessageId, Message]) -> dict[st
         "messages": turns,
         "thinking": {"type": "adaptive"},
         "output_config": {"effort": manifest.effort},
-        # Breakpoint 2: automatic caching of the growing tail (design.md, Prompt caching).
+        # Automatic caching of the growing tail (design.md, Prompt caching).
         "cache_control": dict(_EPHEMERAL),
     }
 

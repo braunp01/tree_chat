@@ -1,26 +1,13 @@
-"""Validation, the Status machine and tree navigation. Pure functions over TreeSnapshot."""
+"""Tree rules: validation, Paths, Replies, the default point and derived Branches (Req 1-3, 5, 6). Pure."""
 
 from __future__ import annotations
 
 from treechat.domain.errors import Conflict, NotFound, ValidationError
-from treechat.domain.model import (
-    Action,
-    Branch,
-    BranchId,
-    BranchKind,
-    MessageId,
-    Outcome,
-    Status,
-    TreeSnapshot,
-)
+from treechat.domain.model import BranchInfo, Message, MessageId, Role, TreeSnapshot
 
 TITLE_MAX = 200
 CONTENT_MAX = 100_000
-INTENT_MAX = 200
-CONCLUSION_MAX = 2_000
-
-
-# --- Field validation (design.md, Validation rules summary) ---------------------------------------
+TITLE_FROM_ROOT = 60
 
 
 def clean_title(title: str) -> str:
@@ -32,145 +19,96 @@ def clean_title(title: str) -> str:
 
 
 def clean_content(content: str) -> str:
-    """Req 2.7. The content is stored as sent; only emptiness and length are checked after trimming."""
+    """Req 3.9. The content is stored as sent; only emptiness and length are checked after trimming."""
     t = content.strip()
     if not t or len(t) > CONTENT_MAX:
         raise ValidationError("content", f"Message must be 1 to {CONTENT_MAX:,} characters.")
     return content
 
 
-def clean_intent(intent: str | None) -> str | None:
-    """Req 4.3: optional; empty means none."""
-    if intent is None:
-        return None
-    t = intent.strip()
-    if len(t) > INTENT_MAX:
-        raise ValidationError("intent", f"Intent must be at most {INTENT_MAX} characters.")
-    return t or None
+def title_from_root(content: str) -> str:
+    """Req 1.3: the first 60 characters of the Root, on one line."""
+    return " ".join(content.split())[:TITLE_FROM_ROOT].strip()
 
 
-def clean_conclusion(outcome: Outcome, conclusion: str | None) -> str | None:
-    """Req 12.2-12.3: required for merged and kept, optional for abandoned."""
-    t = (conclusion or "").strip()
-    if len(t) > CONCLUSION_MAX:
-        raise ValidationError("conclusion", f"Conclusion must be at most {CONCLUSION_MAX:,} characters.")
-    if not t and outcome is not Outcome.ABANDONED:
-        raise ValidationError("conclusion", "A conclusion is required to close as merged or kept.")
-    return t or None
+def message(snap: TreeSnapshot, message_id: MessageId) -> None:
+    if message_id not in snap.messages:
+        raise NotFound(f"Unknown message {message_id}.")
 
 
-def anchor_error(content: str, start: int, end: int, quoted_text: str) -> str | None:
-    """Req 4.5: offsets are code points (Python str indices); the slice must equal the quote."""
-    if not (0 <= start < end <= len(content)):
-        return f"Offsets {start}-{end} are outside the message (length {len(content)})."
-    if content[start:end] != quoted_text:
-        return f"quoted_text does not match the message text at {start}-{end}."
-    return None
-
-
-# --- Status machine (Req 10.1, 12.7-12.9, 2.8) ---------------------------------------------------
-
-_TRANSITIONS: dict[tuple[Status, Action], Status] = {
-    (Status.OPEN, Action.PARK): Status.PARKED,
-    (Status.PARKED, Action.RESUME): Status.OPEN,
-    (Status.OPEN, Action.CLOSE): Status.CLOSED,
-    (Status.PARKED, Action.CLOSE): Status.CLOSED,
-    (Status.CLOSED, Action.REOPEN): Status.OPEN,
-    (Status.OPEN, Action.SEND): Status.OPEN,
-    (Status.PARKED, Action.SEND): Status.OPEN,
-}
-
-
-def transition(status: Status, action: Action, kind: BranchKind) -> Status:
-    if kind is BranchKind.TRUNK and action is not Action.SEND:
-        raise Conflict("The Trunk is always open; it cannot be parked, closed or reopened.")
-    nxt = _TRANSITIONS.get((status, action))
-    if nxt is None:
-        raise Conflict(f"Cannot {action.value} a branch that is {status.value}.")
-    return nxt
-
-
-def check_outcome(kind: BranchKind, outcome: Outcome) -> None:
-    """Req 12.9: an Alternative may not be merged."""
-    if kind is BranchKind.ALTERNATIVE and outcome is Outcome.MERGED:
-        raise ValidationError("outcome", "An alternative cannot be merged; close it as kept or abandoned.")
-
-
-# --- Tree navigation ------------------------------------------------------------------------------
-
-
-def branch(snap: TreeSnapshot, branch_id: BranchId) -> Branch:
-    b = snap.branches.get(branch_id)
-    if b is None:
-        raise NotFound(f"Unknown branch {branch_id}.")
-    return b
-
-
-def ancestors(snap: TreeSnapshot, branch_id: BranchId) -> tuple[BranchId, ...]:
-    """Nearest first, ending at the Trunk."""
-    out: list[BranchId] = []
-    cur = branch(snap, branch_id).parent_branch_id
-    while cur is not None:
-        out.append(cur)
-        cur = branch(snap, cur).parent_branch_id
-    return tuple(out)
-
-
-def children(snap: TreeSnapshot, branch_id: BranchId) -> tuple[BranchId, ...]:
-    return tuple(
-        b.id
-        for b in sorted(snap.branches.values(), key=lambda b: (b.created_at, b.id))
-        if b.parent_branch_id == branch_id
-    )
-
-
-def descendants(snap: TreeSnapshot, branch_id: BranchId) -> tuple[BranchId, ...]:
-    out: list[BranchId] = []
-    stack = list(reversed(children(snap, branch_id)))
-    while stack:
-        b = stack.pop()
-        out.append(b)
-        stack.extend(reversed(children(snap, b)))
-    return tuple(out)
-
-
-def depth(snap: TreeSnapshot, branch_id: BranchId) -> int:
-    return len(ancestors(snap, branch_id))
-
-
-def merge_targets(snap: TreeSnapshot, branch_id: BranchId) -> tuple[BranchId, ...]:
-    """Req 13.3: ancestors that are not closed, nearest first. The Trunk is never closed."""
-    return tuple(a for a in ancestors(snap, branch_id) if snap.branches[a].status is not Status.CLOSED)
-
-
-def tip(snap: TreeSnapshot, branch_id: BranchId) -> MessageId | None:
-    """Glossary Tip: the last Message, or the Fork_Point when the Branch has none."""
-    chain = snap.chain(branch_id)
-    return chain[-1] if chain else branch(snap, branch_id).fork_point_message_id
-
-
-def message_path(snap: TreeSnapshot, message_id: MessageId | None) -> tuple[MessageId, ...]:
-    """Messages from the Trunk's first Message to `message_id`, inclusive, following parent links."""
+def path(snap: TreeSnapshot, message_id: MessageId) -> tuple[MessageId, ...]:
+    """Glossary Path: the Messages from the Root down to `message_id`, inclusive. Iterative: depth is unbounded."""
+    message(snap, message_id)
     out: list[MessageId] = []
-    cur = message_id
+    cur: MessageId | None = message_id
     while cur is not None:
         out.append(cur)
-        cur = snap.messages[cur].parent_message_id
+        cur = snap.messages[cur].parent_id
     out.reverse()
     return tuple(out)
 
 
-def conversation_position(snap: TreeSnapshot, message_id: MessageId) -> int:
-    """Glossary Conversation_Position: how many Messages precede it on its path."""
-    return len(message_path(snap, message_id)) - 1
+def check_parent(snap: TreeSnapshot, parent_id: MessageId) -> None:
+    """Req 3.2, 5.3: a new user Message hangs from an assistant Message of the same Tree."""
+    p = snap.messages.get(parent_id)
+    if p is None:
+        raise Conflict("You can only continue from a reply in this tree.")
+    if p.role is not Role.ASSISTANT:
+        raise Conflict("You can only continue from a reply; this message is still waiting for its reply.")
 
 
-def parent_messages_since_fork(snap: TreeSnapshot, branch_id: BranchId) -> int:
-    """Req 10.5: how many Messages the parent gained after this Branch's Fork_Point."""
-    b = branch(snap, branch_id)
-    if b.parent_branch_id is None:
-        return 0
-    chain = snap.chain(b.parent_branch_id)
-    if b.fork_point_message_id in chain:
-        return len(chain) - chain.index(b.fork_point_message_id) - 1
-    return len(chain)
+def reply_of(snap: TreeSnapshot, user_message_id: MessageId) -> MessageId | None:
+    """Glossary Reply: a user Message has at most one (Req 5.3)."""
+    for c in snap.kids(user_message_id):
+        if snap.messages[c].role is Role.ASSISTANT:
+            return c
+    return None
+
+
+def check_can_reply(snap: TreeSnapshot, user_message_id: MessageId) -> None:
+    """Req 3.3: only a user Message without a Reply can get one."""
+    message(snap, user_message_id)
+    if snap.messages[user_message_id].role is not Role.USER:
+        raise Conflict("Only your own messages get a reply.")
+    if reply_of(snap, user_message_id) is not None:
+        raise Conflict("This message already has its reply.")
+
+
+def default_point(snap: TreeSnapshot) -> MessageId | None:
+    """Req 2.2: the most recently created Reply, or the Root while its Reply is pending."""
+    replies = [m for m in snap.messages.values() if m.role is Role.ASSISTANT]
+    if replies:
+        return max(replies, key=lambda m: (m.created_at, m.id)).id
+    return snap.root_id
+
+
+def latest_reply_below(snap: TreeSnapshot, message_id: MessageId) -> MessageId | None:
+    """Req 2.4: the most recently created Reply among the descendants of `message_id`, if it has any."""
+    best: Message | None = None
+    stack = list(snap.kids(message_id))
+    while stack:
+        m = snap.messages[stack.pop()]
+        if m.role is Role.ASSISTANT and (best is None or (m.created_at, m.id) > (best.created_at, best.id)):
+            best = m
+        stack.extend(snap.kids(m.id))
+    return best.id if best else None
+
+
+def branches(snap: TreeSnapshot) -> tuple[BranchInfo, ...]:
+    """Req 6: derived Branches in pre-order (siblings by creation time). A Branch starts at the Root or at a child of
+    a Fork (a Message with more than one child) and runs down through single children. One pass over the Messages."""
+    if snap.root_id is None:
+        return ()
+    out: list[BranchInfo] = []
+    stack: list[tuple[MessageId, MessageId | None]] = [(snap.root_id, None)]
+    while stack:
+        start, parent_branch = stack.pop()
+        run = [start]
+        kids = snap.kids(start)
+        while len(kids) == 1:
+            run.append(kids[0])
+            kids = snap.kids(kids[0])
+        out.append(BranchInfo(start, parent_branch, tuple(run)))
+        for k in reversed(kids):
+            stack.append((k, start))
+    return tuple(out)
