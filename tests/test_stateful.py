@@ -153,7 +153,7 @@ class TreeChat(RuleBasedStateMachine):
     @rule(data=st.data(), outcome=SUMMARY_OUTCOMES)
     def name_branches(self, data: st.DataObject, outcome: str) -> None:  # Req 9.1, 9.5, 9.6
         tid = data.draw(st.sampled_from(self.tree_ids()))
-        todo = summary_svc.unnamed_branches(self.ctx, tid, skip=self.jobs.attempted)
+        todo = [p.message_id for p in summary_svc.plan_summaries(self.ctx, tid, skip=self.jobs.attempted)]
         if todo:
             self.provider.then_summary(outcome)
 

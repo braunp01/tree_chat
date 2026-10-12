@@ -12,9 +12,11 @@ import pytest
 
 from treechat.api.app import create_app
 from treechat.api.state import State
+from treechat.jobs.summaries import SummaryJobs
 from treechat.provider.fake import FakeProvider
 from treechat.services import messages
 from treechat.store import repo
+from treechat.store.db import Store
 
 
 def events(text: str) -> list[dict[str, Any]]:
@@ -313,3 +315,28 @@ async def test_summaries_never_reach_a_reply_context(api: Api) -> None:  # Prope
     after = messages.prepare_reply(api.state.ctx, root).request
     assert json.dumps(before, sort_keys=True) == json.dumps(after, sort_keys=True)
     assert "About Context check" not in json.dumps(after)
+
+
+async def test_naming_many_branches_reads_the_tree_once(api: Api, monkeypatch: pytest.MonkeyPatch) -> None:  # Req 6.11
+    api.provider.then_summary(*["fail"] * 7)  # build seven Branches with no names yet
+    tree, root = await api.new_tree("Many branches")
+    a = (await api.reply(root))["message"]["id"]
+    for i in range(6):
+        await api.turn(tree, a, f"sibling {i}")
+    await api.state.registry.drain()
+    assert stored(api, tree) == {}
+    jobs = SummaryJobs(api.state.ctx, api.provider, api.state.registry)  # a new run of the server
+    reads = 0
+    real = Store.read
+
+    def counting(self: Store):  # noqa: ANN202
+        nonlocal reads
+        reads += 1
+        return real(self)
+
+    monkeypatch.setattr(Store, "read", counting)
+    jobs.ensure(tree)
+    await api.state.registry.drain()
+    monkeypatch.undo()
+    assert len(stored(api, tree)) == 7  # the Root's Branch and six siblings
+    assert reads == 1  # one read for all seven requests, not one per Branch

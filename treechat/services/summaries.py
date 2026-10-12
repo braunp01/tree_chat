@@ -23,26 +23,20 @@ class PreparedSummary:
     prompt: str
 
 
-def unnamed_branches(ctx: Ctx, tree_id: TreeId, skip: Collection[MessageId] = ()) -> list[MessageId]:
-    """Req 9.1, 9.6: Branch starts with no Branch_Summary, in graph order, leaving out `skip`."""
+def plan_summaries(ctx: Ctx, tree_id: TreeId, skip: Collection[MessageId] = ()) -> list[PreparedSummary]:
+    """Req 9.1-9.2, 9.6: the request for every Branch with no Branch_Summary, leaving out `skip`, in graph order.
+    One read of the Tree for all of them: a 500-Branch backfill must not reload it per Branch (Req 6.11)."""
     with ctx.store.read() as c:
         _, snap = snapshot(c, tree_id)
         named = repo.summaries_for_tree(c, tree_id)
-    return [s for s in summaries.branch_starts(snap) if s not in named and s not in skip]
-
-
-def prepare_summary(ctx: Ctx, tree_id: TreeId, start: MessageId) -> PreparedSummary | None:
-    """Req 9.2: the request for one Branch, from the Store as it is now. None if it no longer needs one."""
-    with ctx.store.read() as c:
-        _, snap = snapshot(c, tree_id)
-        if start in repo.summaries_for_tree(c, tree_id):
-            return None
-    branch = next((b for b in rules.branches(snap) if b.id == start), None)
-    if branch is None:
-        return None
-    source = summaries.summary_source(snap, branch)
-    system, prompt = summaries.summary_prompt([snap.messages[i] for i in source])
-    return PreparedSummary(start, source, system, prompt)
+    out: list[PreparedSummary] = []
+    for branch in rules.branches(snap):
+        if branch.id in named or branch.id in skip:
+            continue
+        source = summaries.summary_source(snap, branch)
+        system, prompt = summaries.summary_prompt([snap.messages[i] for i in source])
+        out.append(PreparedSummary(branch.id, source, system, prompt))
+    return out
 
 
 def save_summary(ctx: Ctx, prepared: PreparedSummary, text: str, model: str) -> str | None:

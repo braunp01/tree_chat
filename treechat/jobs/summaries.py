@@ -38,10 +38,10 @@ class SummaryJobs:
         """Req 9.1, 9.6, 9.8: start a job for each unnamed Branch not yet tried. Call from a running event loop."""
         if not self.provider.has_credentials():
             return
-        for start in summaries.unnamed_branches(self.ctx, tree_id, skip=self.attempted):
-            self.attempted.add(start)
-            self._running.add(start)
-            self.registry.spawn_background(self._run(tree_id, start))
+        for prepared in summaries.plan_summaries(self.ctx, tree_id, skip=self.attempted):
+            self.attempted.add(prepared.message_id)
+            self._running.add(prepared.message_id)
+            self.registry.spawn_background(self._run(prepared))
 
     def _semaphore(self) -> asyncio.Semaphore:
         loop = asyncio.get_running_loop()
@@ -49,23 +49,23 @@ class SummaryJobs:
             self._limit = (loop, asyncio.Semaphore(self.at_once))
         return self._limit[1]
 
-    async def _run(self, tree_id: TreeId, start: MessageId) -> None:
+    async def _run(self, prepared: summaries.PreparedSummary) -> None:
         try:
             async with self._semaphore():
-                await self._name(tree_id, start)
+                await self._name(prepared)
         except Exception:  # a bug must not take the server down; the node keeps its fallback label
             log.exception("naming a branch failed")
         finally:
-            self._running.discard(start)
+            self._running.discard(prepared.message_id)
 
-    async def _name(self, tree_id: TreeId, start: MessageId) -> None:
-        prepared = summaries.prepare_summary(self.ctx, tree_id, start)
-        if prepared is None:
-            return
+    async def _name(self, prepared: summaries.PreparedSummary) -> None:
+        """Only the model call and one insert happen here; the Tree was read once, by `ensure`."""
         try:
             text = await self.provider.summarize(prepared.system, prepared.prompt)
         except ProviderError as exc:  # Req 9.5: nothing persisted, no error shown; only the category is logged
             log.info("branch summary not written: %s", exc.category.value)
             return
-        if summaries.save_summary(self.ctx, prepared, text, self.provider.summary_model) is None:
+        # The write goes to a worker thread: a backfill of hundreds must not hold up requests (Req 6.11).
+        saved = await asyncio.to_thread(summaries.save_summary, self.ctx, prepared, text, self.provider.summary_model)
+        if saved is None:
             log.info("branch summary not written: empty answer")
