@@ -24,7 +24,7 @@ The core is pure logic in `treechat/domain/`:
 | Context | **The Path, nothing else: no framing, no notes, no summaries.** | "What the model sees is the conversation on screen." Determinism and prompt caching come for free: every Context is a prefix-extension of its parent Reply's Context. (Req 4) |
 | Thinking replay | **Store each Reply's full provider content, including signed thinking blocks, and replay it unchanged; replay thinking only when the Reply's recorded model equals the requested model.** | Carried over from v1. A Reply's Path never changes (Req 5), so replaying its thinking is always valid. A refusal fallback may answer with another model, whose thinking belongs to that model. |
 | Prompt caching | **One cache breakpoint on the last block before the new user Message; top-level automatic caching for the rest. The system prompt is frozen and versioned.** | Sibling branches from the same point share their whole prefix, so a new branch reads it from the cache. Latency, not cost. (Req 4.3) |
-| Branches for the graph | **A Branch starts at the Tree's first Message (or at each child of a Fork) and runs down through single children to the next Fork or Leaf. Computed in one pass in the domain; ordered among siblings by creation time.** | Matches what the eye sees as a "line of conversation". Deriving them means nothing can drift out of sync with the Messages. (Req 6) |
+| Branches for the graph | **The Start is the graph's root node (owner: "a single empty global ancestor"). A Branch starts at the Tree's first Message (or at each child of a Fork) and runs down through single children to the next Fork or Leaf. Computed in one pass in the domain; ordered among siblings by creation time.** | Matches what the eye sees as a "line of conversation". Deriving them means nothing can drift out of sync with the Messages. (Req 6) |
 | Graph | **Kept from the v1 UI review: SVG node-link diagram, depth left to right, the neighbourhood of the current Branch drawn, other subtrees collapsed into counted nodes; pan, zoom, fit, `M` to enlarge. Pure TypeScript for visibility and layout.** | Owner chose to keep it, 12 Oct 2026. Its layout and visibility logic are already property-tested and carry over with small changes (nodes are derived Branches; no Status). |
 | Current_Point in the address | **`#/t/<tree>/m/<message>`, or `#/t/<tree>` for the Tree's default.** | Back and forward work; a point can be bookmarked. |
 | Replies, jobs, streaming | **Kept from v1: one asyncio job per user Message, independent of the HTTP request; SSE stream with catch-up for late subscribers.** | Closing the tab must not lose a paid reply (Req 3.8). The registry keys change from Branch to user Message. |
@@ -145,9 +145,9 @@ derived Branches.
 
 ## Open questions
 
-Put to the owner on 12 Oct 2026 (recommendations written in above):
+None. Answered by the owner on 12 Oct 2026, all as recommended:
 
-1. A second, different first question in the same Tree: allowed (the Start can be a Fork), or start a new Tree instead? Recommendation: allowed, since the Start is just the first ancestor.
-2. Opening a Tree goes to the most recently created Reply. Recommendation: yes.
-3. Clicking a graph node goes to the last Message of that Branch. Recommendation: yes.
-4. v1 Stores are left alone and the new version uses a new file. Recommendation: yes; they hold only test data.
+1. A Tree may have several first questions. As the owner put it, this is the same as one empty global ancestor: the Start is drawn as the root node of the Branch_Graph, and the Tree's first Branches hang from it.
+2. Opening a Tree goes to the most recently created Reply.
+3. Clicking a graph node goes to the last Message of that Branch.
+4. v1 Stores are left alone; v2 uses a new file.

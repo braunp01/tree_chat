@@ -1,6 +1,6 @@
 # Requirements Document
 
-> **Status: draft v2, 12 Oct 2026.** Replaces the v1 requirements (passage tangents, parking, closing and
+> **Status: v2, open questions answered by the owner 12 Oct 2026.** Replaces the v1 requirements (passage tangents, parking, closing and
 > merging), which the owner withdrew on 12 Oct 2026. v1 is in git history (`main` at 1e59794).
 
 ## Introduction
@@ -130,7 +130,7 @@ know where I am and can jump to any branch in one click.
 
 #### Acceptance Criteria
 
-1. THE Front_End SHALL show the Branch_Graph of the current Tree beside the chat at all times: one node per Branch, an edge from each Branch to the Branches that fork from its end, the Start at the left and depth increasing to the right.
+1. THE Front_End SHALL show the Branch_Graph of the current Tree beside the chat at all times: a root node for the Start, one node per Branch, an edge from each Branch (or the Start) to the Branches that fork from its end, the Start at the left and depth increasing to the right.
 2. THE Front_End SHALL label each node with the start of its first user Message and its Message count, and SHALL highlight the Branch holding the Current_Point and the edges on the Path to it.
 3. THE Branch_Graph SHALL always draw: the Branches on the Path to the Current_Point, their sibling Branches, and the Branches that fork from the current one. Below any other Branch, its descendants are hidden in one collapsed node that says how many Branches it holds.
 4. WHEN the user activates a collapsed node, or the toggle on a node, THE Branch_Graph SHALL expand or collapse it. THE Front_End SHALL keep that choice while the user stays in the Tree. What Req 6.3 requires cannot be collapsed.
