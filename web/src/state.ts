@@ -84,6 +84,33 @@ export async function refreshShape(): Promise<void> {
   } catch {
     /* the graph keeps what it had */
   }
+  watchSummaries();
+}
+
+// --- Branch summaries arriving (Req 9.4) --------------------------------------------------------------
+
+export const SUMMARY_POLL_MS = 2_000;
+export const SUMMARY_POLL_FOR_MS = 60_000;
+let poll: { tree: string; until: number; timer: ReturnType<typeof setTimeout> | null } | null = null;
+
+function stopPolling(): void {
+  if (poll?.timer) clearTimeout(poll.timer);
+  poll = null;
+}
+
+/** While a node's summary is being written, fetch the shape again every 2 s, for at most 60 s per Tree. */
+export function watchSummaries(): void {
+  const s = shape.value;
+  if (!s || s.id !== treeId.value || !s.branches.some((b) => b.summary_pending)) return stopPolling();
+  if (poll && poll.tree !== s.id) stopPolling();
+  poll ??= { tree: s.id, until: Date.now() + SUMMARY_POLL_FOR_MS, timer: null };
+  if (poll.timer) return;
+  if (Date.now() >= poll.until) return stopPolling(); // give up; the next open or send starts again
+  const mine = poll;
+  mine.timer = setTimeout(() => {
+    mine.timer = null;
+    if (poll === mine) void refreshShape();
+  }, SUMMARY_POLL_MS);
 }
 
 async function show(r: Route): Promise<void> {
@@ -94,6 +121,7 @@ async function show(r: Route): Promise<void> {
     treeId.value = null;
     shape.value = null;
     path.value = null;
+    watchSummaries();
     return;
   }
   try {
@@ -101,7 +129,9 @@ async function show(r: Route): Promise<void> {
       treeId.value = r.tree;
       shape.value = null;
       path.value = null; // another Tree's Path must not stay on screen, or be sent from
+      watchSummaries(); // stops polling for the Tree being left
       shape.value = await api.tree(r.tree);
+      watchSummaries();
     }
     const point = r.point ?? shape.value?.default_point ?? null; // Req 2.2
     const p = point ? await api.path(point) : null;

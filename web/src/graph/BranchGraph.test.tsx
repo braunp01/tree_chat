@@ -87,6 +87,22 @@ describe("what the graph draws (Req 6.1-6.3)", () => {
     expect(tip.textContent).toContain("Caches store…");
   });
 
+  it("labels a node with its summary and keeps the question in the tooltip (Req 6.2, 6.8, 9.4)", async () => {
+    const bs = branches();
+    bs[1] = { ...bs[1]!, label: "Choosing good cache keys", summary: "Choosing good cache keys", question: "Cache keys" };
+    shape.value = tree(bs);
+    treeId.value = "tree1";
+    path.value = pathOf([msg("r", "user"), msg("a-r", "assistant")]);
+    host = document.createElement("div");
+    document.body.append(host);
+    act(() => render(<BranchGraph />, host));
+    expect(node("a")!.textContent).toContain("Choosing good cache");
+    await act(async () => void node("a").dispatchEvent(new FocusEvent("focus")));
+    const tip = host.querySelector(".graph-tip")!;
+    expect(tip.textContent).toContain("Choosing good cache keys");
+    expect(tip.textContent).toContain("Cache keys");
+  });
+
   it("tells assistive technology label, depth and place among siblings (Req 6.10)", () => {
     mount("a");
     const b = node("b")!;
