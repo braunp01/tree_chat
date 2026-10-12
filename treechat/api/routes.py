@@ -48,7 +48,9 @@ async def list_trees(request: Request) -> list[dict[str, Any]]:
 @router.post("/trees", status_code=201)
 async def create_tree(body: ContentIn, request: Request) -> dict[str, Any]:
     """Req 1.1: a Tree is created by its first Message, its Root. The client then requests the Reply."""
-    made = trees.create_tree(state_of(request).ctx, body.content)
+    st = state_of(request)
+    made = trees.create_tree(st.ctx, body.content)
+    st.summaries.ensure(made.tree.id)  # Req 9.1: the Root's Branch
     return {"tree": views.tree_row_out(made.tree), "message": views.message_out(made.root)}
 
 
@@ -59,13 +61,18 @@ async def rename_tree(tree_id: str, body: TitleIn, request: Request) -> dict[str
 
 @router.get("/trees/{tree_id}")
 async def get_tree(tree_id: str, request: Request) -> dict[str, Any]:
-    return views.tree_out(state_of(request).ctx, tree_id)
+    st = state_of(request)
+    st.summaries.ensure(tree_id)  # Req 9.6: name what is still unnamed, once per run
+    return views.tree_out(st.ctx, tree_id, st.summaries.pending())
 
 
 @router.post("/trees/{tree_id}/messages", status_code=201)
 async def send(tree_id: str, body: SendIn, request: Request) -> dict[str, Any]:
     """Req 3.1-3.2: a new child of the Current_Point. The client then requests the Reply."""
-    return views.message_out(messages.send(state_of(request).ctx, tree_id, body.parent_id, body.content))
+    st = state_of(request)
+    m = messages.send(st.ctx, tree_id, body.parent_id, body.content)
+    st.summaries.ensure(tree_id)  # Req 9.1: a new Branch, and the older one split off by a new Fork
+    return views.message_out(m)
 
 
 @router.get("/messages/{message_id}/path")

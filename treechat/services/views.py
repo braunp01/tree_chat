@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Collection
 from typing import Any
 
 from treechat.domain import rules
@@ -41,10 +42,12 @@ def list_trees(ctx: Ctx) -> list[dict[str, Any]]:
         return [tree_row_out(t) for t in repo.list_trees(c)]
 
 
-def tree_out(ctx: Ctx, tree_id: TreeId) -> dict[str, Any]:
-    """Req 2.2, 6: the Tree's shape without Message text, its derived Branches and its default Current_Point."""
+def tree_out(ctx: Ctx, tree_id: TreeId, pending: Collection[MessageId] = ()) -> dict[str, Any]:
+    """Req 2.2, 6, 9: the Tree's shape without Message text, its derived Branches with their names, and its default
+    Current_Point. `pending`: Branch starts whose summary is being written."""
     with ctx.store.read() as c:
         tree, snap = snapshot(c, tree_id)
+        named = repo.summaries_for_tree(c, tree_id)
     branches = rules.branches(snap)
     return {
         **tree_row_out(tree),
@@ -54,7 +57,10 @@ def tree_out(ctx: Ctx, tree_id: TreeId) -> dict[str, Any]:
                 "id": b.id,
                 "parent_branch_id": b.parent_branch_id,
                 "message_ids": list(b.message_ids),
-                "label": rules.title_from_root(snap.messages[b.id].content)[:LABEL],  # Req 6.2
+                "label": named[b.id].summary if b.id in named else question,  # Req 6.2, 9.4
+                "summary": named[b.id].summary if b.id in named else None,
+                "summary_pending": b.id not in named and b.id in pending,
+                "question": question,  # Req 6.8
                 "forked_from": snap.messages[b.id].parent_id,  # Req 6.8
                 "forked_from_preview": rules.title_from_root(snap.messages[p].content)
                 if (p := snap.messages[b.id].parent_id)
@@ -62,6 +68,7 @@ def tree_out(ctx: Ctx, tree_id: TreeId) -> dict[str, Any]:
                 "created_at": snap.messages[b.id].created_at,
             }
             for b in branches
+            for question in [rules.title_from_root(snap.messages[b.id].content)[:LABEL]]
         ],
     }
 
